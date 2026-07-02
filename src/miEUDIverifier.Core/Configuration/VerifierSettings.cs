@@ -40,4 +40,21 @@ public class VerifierSettings
     /// The demo certificate for the EUDI reference implementation test environment is pre-filled.
     /// </summary>
     public string? IssuerChain { get; set; }
+
+    /// <summary>
+    /// DCQL format identifier for the SD-JWT VC option. OpenID4VP 1.0 / HAIP use "dc+sd-jwt";
+    /// older stacks used "vc+sd-jwt".
+    /// </summary>
+    public string SdJwtFormat { get; set; } = "dc+sd-jwt";
+
+    /// <summary>
+    /// Accepted verifiable-credential types (vct) for the SD-JWT VC PID. The wallet may present a
+    /// credential whose vct matches any of these. Defaults cover the ARF value and the OpenID4VP
+    /// specification example.
+    /// </summary>
+    public List<string> SdJwtVctValues { get; set; } = new()
+    {
+        "urn:eudi:pid:1",
+        "urn:eu.europa.ec.eudi:pid:1",
+    };
 }
