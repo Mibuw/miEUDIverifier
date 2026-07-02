@@ -1,0 +1,13 @@
+<Project>
+  <!-- NuGet package metadata for miEUDIverifier.Core (used by dotnet pack) -->
+  <PropertyGroup>
+    <PackageId>miEUDIverifier.Core</PackageId>
+    <Authors>Wolfgang Mitterbucher</Authors>
+    <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Includes DCQL request building, polling and identity data extraction.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Mibuw/miEUDIverifier</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Mibuw/miEUDIverifier</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>eudi;eudi-wallet;openid4vp;eidas2;digital-identity;verifiable-credentials;pid</PackageTags>
+  </PropertyGroup>
+</Project>
