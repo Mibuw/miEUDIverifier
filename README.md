@@ -29,7 +29,7 @@ following three attributes:
 │  browser    │                                          ▲
 │             │                                          │ VP Token
 └─────────────┘                                          │
-      ▲                                       ┌───────────┴──────┐
+      ▲                                       ┌──────────┴───────┐
       │ GET /ui/presentations/{id}            │  EUDI Wallet App │
       │ (auto-polling)                        │  (iOS / Android) │
       │                                       │  scans QR code   │
