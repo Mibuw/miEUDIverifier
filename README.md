@@ -1,6 +1,6 @@
 # miEUDIverifier
 
-[![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/)
+[![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Docker on GHCR](https://img.shields.io/badge/GHCR-mibuw%2Fmieudiverifier-2496ED?logo=docker&logoColor=white)](https://github.com/Mibuw/miEUDIverifier/pkgs/container/mieudiverifier)
 
 **Reusable core library on NuGet:** `dotnet add package miEUDIverifier.Core`
 
@@ -308,3 +308,13 @@ Implementation. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Copyright 2026 Wolfgang Mitterbucher.
 
 All third-party dependencies are permissive (MIT / Apache 2.0) and compatible with this license.
+
+---
+
+## Author
+
+**Wolfgang Mitterbucher** — Software Engineering & Digital Identity, Leonding (Austria)
+
+🌐 [www.mitterbucher.com](https://www.mitterbucher.com) · 💼 [LinkedIn](https://at.linkedin.com/in/wolfgangmitterbucher) · ✉️ office@mitterbucher.com
+
+**More open-source projects:** [miPDFconvert](https://github.com/Mibuw/miPDFconvert) · [miPDFvalidator](https://github.com/Mibuw/miPDFvalidator) · [miEUDIverifier](https://github.com/Mibuw/miEUDIverifier)
