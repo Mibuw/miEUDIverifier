@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>miEUDIverifier</AssemblyName>
+    <RootNamespace>miEUDIverifier</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Alle Services, Models und Config kommen aus der Core-Library -->
+    <ProjectReference Include="..\miEUDIverifier.Core\miEUDIverifier.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
