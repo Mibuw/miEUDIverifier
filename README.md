@@ -1,4 +1,4 @@
-# miEUDIverifier (C#)
+# miEUDIverifier
 
 A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks to the
 **EUDI Verifier Backend REST API** (OpenID4VP) to read identity data from an EUDI Wallet.
