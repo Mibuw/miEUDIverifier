@@ -78,8 +78,9 @@ with test data:
 
 Afterwards the PID credential is stored in the wallet and can be read by this verifier.
 
-> **Note:** This verifier requests PID in the **mso_mdoc** format (see the field table above).
-> On the test issuer, therefore choose **PID (MSO Mdoc)** – not the SD-JWT VC variant.
+> **Note:** This verifier requests the PID in **both** formats — **mso_mdoc** and **SD-JWT VC**
+> (`dc+sd-jwt`) — as alternative options, so the wallet can present whichever it holds. On the test
+> issuer you can therefore load **PID (MSO Mdoc)** or **PID (SD-JWT VC)**; both work.
 
 ## Quick start
 

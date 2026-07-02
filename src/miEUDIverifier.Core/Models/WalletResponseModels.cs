@@ -93,7 +93,7 @@ public class IdentityData
     public string? GivenName { get; set; }
     public string? BirthDate { get; set; }
 
-    /// <summary>Source credential format ("mso_mdoc" or "vc+sd-jwt").</summary>
+    /// <summary>Source credential format ("mso_mdoc" or "dc+sd-jwt").</summary>
     public string? CredentialFormat { get; set; }
 
     /// <summary>Additional claims that were returned beyond the three requested.</summary>

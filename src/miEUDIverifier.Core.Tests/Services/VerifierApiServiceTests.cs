@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using miEUDIverifier.Configuration;
 using miEUDIverifier.Models;
@@ -93,6 +94,8 @@ public class VerifierApiServiceTests
         capturedBody.Should().Contain("family_name",         because: "Familienname wird angefragt");
         capturedBody.Should().Contain("given_name",          because: "Vorname wird angefragt");
         capturedBody.Should().Contain("birth_date",          because: "Geburtsdatum wird angefragt");
+        capturedBody.Should().Contain("dc+sd-jwt",           because: "SD-JWT VC wird als zweite Option angefragt");
+        capturedBody.Should().Contain("urn:eudi:pid:1",      because: "vct der SD-JWT VC PID");
     }
 
     [Fact]
@@ -270,6 +273,44 @@ public class VerifierApiServiceTests
         // Assert: negativer Timestamp darf nicht als Rohwert durchfallen
         identity.BirthDate.Should().Be("1967-06-10",
             because: "-80870400000ms entspricht dem 10. Juni 1967");
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_ParsesSdJwtVc_FromVpTokenString()
+    {
+        // Arrange: build an SD-JWT VC presentation "<jwt>~<disclosure>~<disclosure>~<disclosure>~"
+        static string B64Url(byte[] b) =>
+            Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        static string Disclosure(string name, string value) =>
+            B64Url(Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(new object[] { "salt", name, value })));
+
+        var header  = B64Url(Encoding.UTF8.GetBytes("""{"alg":"ES256","typ":"dc+sd-jwt"}"""));
+        var payload = B64Url(Encoding.UTF8.GetBytes("""{"vct":"urn:eudi:pid:1"}"""));
+        var sdJwt   = $"{header}.{payload}.sig"
+                    + "~" + Disclosure("family_name", "Mitterbucher")
+                    + "~" + Disclosure("given_name",  "Wolfgang")
+                    + "~" + Disclosure("birth_date",  "1967-06-10")
+                    + "~";
+
+        // vp_token is an object keyed by the DCQL credential id → SD-JWT presentation string
+        using var doc = JsonDocument.Parse(
+            JsonSerializer.Serialize(new Dictionary<string, string> { ["pid-sdjwt"] = sdJwt }));
+        var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
+
+        // The mso_mdoc utility endpoint must NOT be called for an SD-JWT presentation.
+        var service = CreateService(_ =>
+            throw new InvalidOperationException("No HTTP call expected for SD-JWT parsing"));
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert: selectively disclosed values are read from the disclosures
+        identity.FamilyName.Should().Be("Mitterbucher");
+        identity.GivenName.Should().Be("Wolfgang");
+        identity.BirthDate.Should().Be("1967-06-10");
+        identity.CredentialFormat.Should().Be("dc+sd-jwt");
+        identity.IsComplete.Should().BeTrue();
     }
 
     [Fact]
