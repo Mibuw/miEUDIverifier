@@ -1,0 +1,14 @@
+miEUDIverifier
+Copyright 2026 Wolfgang Mitterbucher
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product interoperates with the European Digital Identity (EUDI) Wallet
+reference implementation (https://github.com/eu-digital-identity-wallet),
+which is likewise licensed under the Apache License, Version 2.0. This project
+contains original, independently written code and does not bundle source code
+of the EUDI reference implementation.
+
+Third-party components used at runtime:
+  - QRCoder (MIT License)
+  - Microsoft.Extensions.* (MIT License)

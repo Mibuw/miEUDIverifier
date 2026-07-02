@@ -1,0 +1,90 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# EUDI Verifier Backend – lokaler Entwicklungs-Stack
+#
+# HINTERGRUND:
+#   https://verifier.eudiw.dev  ist die öffentliche Frontend-URL (Angular SPA).
+#   Das Backend (Spring Boot REST-API) ist öffentlich nicht direkt erreichbar.
+#   Für eigene Applikationen muss das Backend lokal gestartet werden.
+#
+# SETUP:
+#   1. LAN-IP des Rechners ermitteln (ipconfig / ip addr)
+#   2. In dieser Datei VERIFIER_PUBLICURL auf die LAN-IP setzen (s.u.)
+#   3. docker compose up -d
+#   4. In appsettings.json: BackendUrl = "http://<LAN-IP>:8080"
+#      (oder als Argument: dotnet run -- --VerifierSettings:BackendUrl=http://<LAN-IP>:8080)
+#
+# WARUM LAN-IP?
+#   Der QR-Code enthält request_uri=http://<VERIFIER_PUBLICURL>/wallet/request.jwt/...
+#   Die EUDI Wallet App am Handy muss diese URL erreichen können.
+#   Mit "localhost" würde das Handy sein eigenes localhost ansprechen – nicht den PC.
+#
+# BEISPIEL (LAN-IP 192.168.1.42):
+#   VERIFIER_PUBLICURL: "http://192.168.1.42:8080"
+#   BackendUrl in appsettings.json: "http://192.168.1.42:8080"
+# ──────────────────────────────────────────────────────────────────────────────
+version: "3.9"
+
+services:
+  verifier-backend:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-verifier-endpoint:latest
+    container_name: eudi-verifier-backend
+    ports:
+      - "8080:8080"
+    environment:
+      # !! ANPASSEN: LAN-IP des Rechners eintragen, z.B. http://192.168.1.42:8080
+      # Damit kann die EUDI Wallet App am Handy den request_uri im QR-Code abrufen.
+      VERIFIER_PUBLICURL: "http://192.168.100.55:8080"
+
+      VERIFIER_RESPONSE_MODE: "DirectPost"
+      VERIFIER_REQUESTJWT_EMBED: "ByReference"
+      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Post"
+
+      # Alle Aussteller akzeptieren (nur Entwicklung – nicht produktiv verwenden!)
+      VERIFIER_ATTESTATIONCLASSIFICATIONS: >-
+        {"pid":{"vcts":["urn:eudi:pid:1"],"docTypes":["eu.europa.ec.eudi.pid.1"]},
+         "qeaa":{"vcts":[],"docTypes":[]},
+         "pubeaa":{"vcts":[],"docTypes":[]},
+         "eaa":[{"useCase":"mDL","vcts":[],"docTypes":["org.iso.18013.5.1.mDL"]}]}
+
+      CORS_ORIGINS: "*"
+      CORS_METHODS: "*"
+      CORS_HEADERS: "*"
+      SPRING_PROFILES_ACTIVE: "self-signed"
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  verifier-ui:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-web-verifier:latest
+    container_name: eudi-verifier-ui
+    ports:
+      - "4200:80"
+    environment:
+      # Verifier-UI zeigt den selben Backend-Status wie die C# App
+      VERIFIER_API_URL: "http://localhost:8080"
+    depends_on:
+      verifier-backend:
+        condition: service_healthy
+
+  # ── miEUDIverifier-App ──────────────────────────────────────────────────────
+  # Baut das Image aus dem Dockerfile im Repo-Root und startet die Web-App.
+  # Erreichbar unter http://localhost:5050
+  mieudiverifier-app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: mieudiverifier-app
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      # Im Compose-Netz das lokale Backend nutzen (statt des öffentlichen Servers).
+      # Zum Nutzen des öffentlichen Backends diese Zeile auskommentieren.
+      EUDI_VerifierSettings__BackendUrl: "http://verifier-backend:8080"
+    depends_on:
+      verifier-backend:
+        condition: service_healthy

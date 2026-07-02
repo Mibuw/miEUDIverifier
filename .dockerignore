@@ -1,0 +1,25 @@
+# Build-Output (wird im Container neu erzeugt)
+**/bin/
+**/obj/
+
+# IDE / VCS
+.vs/
+.git/
+.gitignore
+.claude/
+*.user
+
+# Zertifikate & Schlüsselmaterial – gehören nie ins Image
+Cert/
+*.pfx
+*.pem
+*.key
+*.crt
+*.p12
+
+# Docker-Dateien selbst
+Dockerfile
+.dockerignore
+
+# Doku
+README.md

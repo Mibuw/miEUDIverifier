@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+# Visual Studio
+.vs/
+*.user
+
+# Zertifikate & Schlüsselmaterial — niemals ins Repo
+Cert/
+*.pfx
+*.pem
+*.key
+*.crt
+*.p12
+
+# Claude-lokale Dateien
+.claude/
