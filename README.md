@@ -40,6 +40,14 @@ The app starts a local web server, automatically opens the browser and shows the
 image. After the scan, the page polls the wallet's response server-side and displays the identity
 data – no manual reload needed.
 
+## Try it (test endpoint)
+
+A public test instance is available at **http://miEUDIverifier.mitterbucher.com:5050** —
+just open it and click **New request** to get a fresh QR code, then scan it with your EUDI Wallet App.
+
+> _No guarantee of availability_ — this endpoint may be offline at any time. To run your own
+> instance, see the [Quick start](#quick-start) below.
+
 ## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
