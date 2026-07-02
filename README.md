@@ -1,5 +1,9 @@
 # miEUDIverifier
 
+[![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/)
+
+**Reusable core library on NuGet:** `dotnet add package miEUDIverifier.Core`
+
 A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks to the
 **EUDI Verifier Backend REST API** (OpenID4VP) to read identity data from an EUDI Wallet.
 
