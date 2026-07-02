@@ -1,0 +1,61 @@
+name: Publish miEUDIverifier.Core to NuGet
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version, e.g. 1.0.0"
+        required: true
+
+jobs:
+  pack-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # OIDC token for NuGet Trusted Publishing
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Determine version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Pack
+        run: |
+          dotnet pack src/miEUDIverifier.Core/miEUDIverifier.Core.csproj \
+            -c Release -o out \
+            -p:PackageId=miEUDIverifier.Core \
+            -p:Version=$VERSION \
+            -p:Authors="Wolfgang Mitterbucher" \
+            -p:Description="Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Includes DCQL request building, polling and identity data extraction." \
+            -p:PackageLicenseExpression=Apache-2.0 \
+            -p:PackageProjectUrl=https://github.com/Mibuw/miEUDIverifier \
+            -p:RepositoryUrl=https://github.com/Mibuw/miEUDIverifier \
+            -p:RepositoryType=git \
+            -p:PackageTags="eudi;eudi-wallet;openid4vp;eidas2;digital-identity;verifiable-credentials;pid"
+
+      - name: NuGet login (OIDC -> temporary API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}  # nuget.org profile name (NOT the email address)
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push "out/*.nupkg" \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicates
