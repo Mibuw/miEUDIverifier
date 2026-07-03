@@ -8,7 +8,7 @@
     <AssemblyName>miEUDIverifier.Core</AssemblyName>
     <RootNamespace>miEUDIverifier</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <Description>EUDI Wallet Verifier Core – OpenID4VP / ISO 18013-5 PID verification library</Description>
+    <!-- Description & weitere NuGet-Metadaten: siehe Directory.Build.props -->
   </PropertyGroup>
 
   <ItemGroup>

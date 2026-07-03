@@ -3,11 +3,20 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <Authors>Wolfgang Mitterbucher</Authors>
-    <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Includes DCQL request building, polling and identity data extraction.</Description>
+    <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
+    <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Builds the DCQL request (mso_mdoc and SD-JWT VC), polls for the wallet response and extracts the identity data, including SD-JWT disclosure parsing.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Mibuw/miEUDIverifier</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Mibuw/miEUDIverifier</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>eudi;eudi-wallet;openid4vp;eidas2;digital-identity;verifiable-credentials;pid</PackageTags>
+    <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
+    <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Shown on the nuget.org package page -->
+    <None Include="PACKAGE.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>
