@@ -22,4 +22,7 @@ public class AppState
 
     /// <summary>CancellationTokenSource des aktuellen Polling-Tasks.</summary>
     public CancellationTokenSource? PollingCts { get; set; }
+
+    /// <summary>Erstellungszeitpunkt (UTC) – für die TTL-basierte Bereinigung von API-Sessions.</summary>
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

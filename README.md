@@ -109,6 +109,48 @@ dotnet run --project src/miEUDIverifier
 #    → After confirmation the web page shows name and date of birth
 ```
 
+## REST API
+
+Besides the demo page at `/`, the app exposes a **session-based REST API** so external
+applications can run **any number of verifications in parallel**. Each `POST /api/verification`
+creates an independent session with its own QR code, polling and result. The demo page is
+unaffected.
+
+| Method & path | Description |
+|---------------|-------------|
+| `POST /api/verification` | Start a verification. Returns `201` with `{ id, status, deepLink }`. |
+| `GET /api/verification/{id}/qrcode` | QR code as a PNG image (`image/png`). |
+| `GET /api/verification/{id}/status` | Current status: `waiting` / `complete` / `partial` / `error`. |
+| `GET /api/verification/{id}/data` | Extracted PID data once available (`200`); `409` while still `waiting` or on `error`. |
+| `DELETE /api/verification/{id}` | Discard the session and cancel its polling (`204`). |
+
+Unknown session ids return `404`. Sessions are evicted automatically after
+`SessionTtlMinutes` (default 30).
+
+### Example
+
+```bash
+BASE=http://localhost:5050
+
+# 1. Start a verification → returns a session id
+ID=$(curl -s -X POST $BASE/api/verification | jq -r .id)
+
+# 2. Show the QR code to the user (PNG) — or render the returned deepLink yourself
+curl -s $BASE/api/verification/$ID/qrcode -o qr.png
+
+# 3. Poll the status until it is "complete"
+curl -s $BASE/api/verification/$ID/status
+#    {"id":"…","status":"waiting","error":null}
+
+# 4. Fetch the PID data once complete
+curl -s $BASE/api/verification/$ID/data
+#    {"id":"…","status":"complete","familyName":"…","givenName":"…",
+#     "birthDate":"1967-06-10","format":"mso_mdoc"}
+
+# 5. Clean up (optional — otherwise the session expires after the TTL)
+curl -s -X DELETE $BASE/api/verification/$ID
+```
+
 ## Configuration
 
 All settings live in `src/miEUDIverifier/appsettings.json`:
@@ -121,6 +163,7 @@ All settings live in `src/miEUDIverifier/appsettings.json`:
 | `Profile` | `openid4vp` | OpenID4VP profile (`openid4vp` or `haip`) |
 | `AuthorizationRequestScheme` | `openid4vp` | URI scheme for the QR code |
 | `IssuerChain` | EUDI demo CA | PEM certificate of the trusted PID issuer |
+| `SessionTtlMinutes` | `30` | Time-to-live for REST-API verification sessions |
 
 Override via environment variable (prefix `EUDI_`):
 ```bash

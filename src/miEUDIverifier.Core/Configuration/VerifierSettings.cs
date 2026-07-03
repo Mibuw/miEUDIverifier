@@ -57,4 +57,10 @@ public class VerifierSettings
         "urn:eudi:pid:1",
         "urn:eu.europa.ec.eudi:pid:1",
     };
+
+    /// <summary>
+    /// Time-to-live (minutes) for REST-API verification sessions. Abandoned sessions are
+    /// evicted after this period. Default: 30 minutes.
+    /// </summary>
+    public int SessionTtlMinutes { get; set; } = 30;
 }
