@@ -87,55 +87,87 @@ void StartPolling(AppState state, CancellationToken appStopping)
     }, cts.Token);
 }
 
-// ── 2. Erste Transaction starten ──────────────────────────────────────────────
+// ── 2. Session-Store & Browser-Sessions ───────────────────────────────────────
 Console.WriteLine("\n  EUDI Wallet Verifier – Starte ...");
 
-// Session-Store für die REST-API (parallele Verifikationen unabhängig von der Demo-Seite)
+// Zentraler Session-Store: sowohl die REST-API als auch die Demo-Seite (per Cookie)
+// legen hier ihre Sessions ab → jeder Browser bzw. API-Client bekommt eine eigene.
 var sessions = new SessionStore(TimeSpan.FromMinutes(settings.SessionTtlMinutes));
 using var sessionPurgeTimer = new Timer(
     _ => { try { sessions.PurgeExpired(); } catch { /* best effort */ } },
     null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
-var appState = new AppState();
-try
+const string BrowserSessionCookie = "mieudi_sid";
+
+// Liefert die zum Browser-Cookie gehörende Session – oder null, wenn keine (mehr) existiert.
+AppState? GetBrowserSession(HttpContext ctx) =>
+    ctx.Request.Cookies.TryGetValue(BrowserSessionCookie, out var sid)
+    && sessions.TryGet(sid, out var s) ? s : null;
+
+// Holt die Browser-Session oder legt eine neue an (Transaction + Polling + Cookie setzen).
+async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
 {
-    await StartNewTransaction(appState, CancellationToken.None);
+    var existing = GetBrowserSession(ctx);
+    if (existing is not null) return existing;
+
+    var state = new AppState();
+    await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
+    StartPolling(state, app.Lifetime.ApplicationStopping);
+
+    var id = sessions.Add(state);
+    ctx.Response.Cookies.Append(BrowserSessionCookie, id, new CookieOptions
+    {
+        HttpOnly = true,
+        SameSite = SameSiteMode.Lax,
+        Path     = "/",
+        MaxAge   = TimeSpan.FromMinutes(settings.SessionTtlMinutes),
+    });
+    return state;
 }
-catch (Exception ex)
+
+// ── 3. Web-Routen (Demo-Seite, pro Browser-Session via Cookie) ─────────────────
+
+app.MapGet("/", async (HttpContext ctx) =>
 {
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine($"\n  Fehler: {ex.Message}");
-    Console.ResetColor();
-    return;
-}
+    var state = await GetOrCreateBrowserSessionAsync(ctx);
+    return Results.Content(
+        HtmlPage.Render(state, ctx.Request.Headers.AcceptLanguage.ToString()),
+        "text/html; charset=utf-8");
+});
 
-StartPolling(appState, app.Lifetime.ApplicationStopping);
-
-// ── 3. Web-Routen ─────────────────────────────────────────────────────────────
-
-app.MapGet("/", (HttpRequest request) =>
-    Results.Content(
-        HtmlPage.Render(appState, request.Headers.AcceptLanguage.ToString()),
-        "text/html; charset=utf-8"));
-
-app.MapGet("/api/status", () => Results.Json(new
+app.MapGet("/api/status", (HttpContext ctx) =>
 {
-    status     = appState.Status,
-    familyName = appState.Identity?.FamilyName,
-    givenName  = appState.Identity?.GivenName,
-    birthDate  = appState.Identity?.BirthDate,
-    format     = appState.Identity?.CredentialFormat,
-    error      = appState.ErrorMessage,
-}));
+    var state = GetBrowserSession(ctx);
+    if (state is null) return Results.Json(new { status = "expired" });
 
-// Neuer Request – initialisiert eine frische Transaction und liefert den neuen QR-Code
-app.MapPost("/api/reset", async () =>
+    return Results.Json(new
+    {
+        status     = state.Status,
+        familyName = state.Identity?.FamilyName,
+        givenName  = state.Identity?.GivenName,
+        birthDate  = state.Identity?.BirthDate,
+        format     = state.Identity?.CredentialFormat,
+        error      = state.ErrorMessage,
+    });
+});
+
+// Neuer Request – frische Transaction für die aktuelle Browser-Session
+app.MapPost("/api/reset", async (HttpContext ctx) =>
 {
     try
     {
-        await StartNewTransaction(appState, app.Lifetime.ApplicationStopping);
-        StartPolling(appState, app.Lifetime.ApplicationStopping);
-        return Results.Json(new { qrBase64 = appState.QrBase64 });
+        var state = GetBrowserSession(ctx);
+        if (state is null)
+        {
+            // Session abgelaufen/fehlt → neue anlegen (setzt auch das Cookie)
+            state = await GetOrCreateBrowserSessionAsync(ctx);
+        }
+        else
+        {
+            await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
+            StartPolling(state, app.Lifetime.ApplicationStopping);
+        }
+        return Results.Json(new { qrBase64 = state.QrBase64 });
     }
     catch (Exception ex)
     {
@@ -143,13 +175,19 @@ app.MapPost("/api/reset", async () =>
     }
 });
 
-app.MapGet("/api/debug", () => Results.Json(new
+app.MapGet("/api/debug", (HttpContext ctx) =>
 {
-    status          = appState.Status,
-    transactionId   = appState.TransactionId,
-    lastRawResponse = appState.LastRawResponse,
-    identity        = appState.Identity,
-}));
+    var state = GetBrowserSession(ctx);
+    if (state is null) return Results.Json(new { status = "expired" });
+
+    return Results.Json(new
+    {
+        status          = state.Status,
+        transactionId   = state.TransactionId,
+        lastRawResponse = state.LastRawResponse,
+        identity        = state.Identity,
+    });
+});
 
 // ── 3b. Session-basierte REST-API ──────────────────────────────────────────────
 // Ermöglicht beliebig viele parallele Verifikationen unabhängig von der Demo-Seite.
