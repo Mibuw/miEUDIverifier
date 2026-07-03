@@ -90,6 +90,12 @@ void StartPolling(AppState state, CancellationToken appStopping)
 // ── 2. Erste Transaction starten ──────────────────────────────────────────────
 Console.WriteLine("\n  EUDI Wallet Verifier – Starte ...");
 
+// Session-Store für die REST-API (parallele Verifikationen unabhängig von der Demo-Seite)
+var sessions = new SessionStore(TimeSpan.FromMinutes(settings.SessionTtlMinutes));
+using var sessionPurgeTimer = new Timer(
+    _ => { try { sessions.PurgeExpired(); } catch { /* best effort */ } },
+    null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+
 var appState = new AppState();
 try
 {
@@ -144,6 +150,90 @@ app.MapGet("/api/debug", () => Results.Json(new
     lastRawResponse = appState.LastRawResponse,
     identity        = appState.Identity,
 }));
+
+// ── 3b. Session-basierte REST-API ──────────────────────────────────────────────
+// Ermöglicht beliebig viele parallele Verifikationen unabhängig von der Demo-Seite.
+
+// POST /api/verification – startet eine neue Verifikation, liefert Session-ID + Deep-Link
+app.MapPost("/api/verification", async () =>
+{
+    try
+    {
+        var state = new AppState();
+        await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
+        StartPolling(state, app.Lifetime.ApplicationStopping);
+
+        var id = sessions.Add(state);
+        return Results.Created($"/api/verification/{id}", new
+        {
+            id,
+            status   = state.Status,   // waiting
+            deepLink = state.DeepLink,
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 500);
+    }
+});
+
+// GET /api/verification/{id}/qrcode – QR-Code als PNG-Bild
+app.MapGet("/api/verification/{id}/qrcode", (string id) =>
+{
+    if (!sessions.TryGet(id, out var state) || string.IsNullOrEmpty(state.QrBase64))
+        return Results.NotFound(new { error = "Unknown or empty verification session." });
+
+    var png = Convert.FromBase64String(state.QrBase64);
+    return Results.File(png, "image/png");
+});
+
+// GET /api/verification/{id}/status – aktueller Status der Verifikation
+app.MapGet("/api/verification/{id}/status", (string id) =>
+{
+    if (!sessions.TryGet(id, out var state))
+        return Results.NotFound(new { error = "Unknown verification session." });
+
+    return Results.Json(new
+    {
+        id,
+        status = state.Status,          // waiting | complete | partial | error
+        error  = state.ErrorMessage,
+    });
+});
+
+// GET /api/verification/{id}/data – extrahierte PID-Daten (wenn vorhanden)
+app.MapGet("/api/verification/{id}/data", (string id) =>
+{
+    if (!sessions.TryGet(id, out var state))
+        return Results.NotFound(new { error = "Unknown verification session." });
+
+    if (state.Identity is not null && (state.Status == "complete" || state.Status == "partial"))
+    {
+        return Results.Json(new
+        {
+            id,
+            status     = state.Status,
+            familyName = state.Identity.FamilyName,
+            givenName  = state.Identity.GivenName,
+            birthDate  = state.Identity.BirthDate,
+            format     = state.Identity.CredentialFormat,
+        });
+    }
+
+    // Noch keine Daten (waiting) oder Fehler → 409, damit Clients weiterpollen können
+    return Results.Json(new { id, status = state.Status, error = state.ErrorMessage },
+        statusCode: 409);
+});
+
+// DELETE /api/verification/{id} – Session verwerfen und Polling abbrechen
+app.MapDelete("/api/verification/{id}", (string id) =>
+{
+    if (!sessions.Remove(id, out var state))
+        return Results.NotFound(new { error = "Unknown verification session." });
+
+    state?.PollingCts?.Cancel();
+    return Results.NoContent();
+});
 
 // ── 4. Starten ────────────────────────────────────────────────────────────────
 // Kestrel liest Endpoints + Zertifikat direkt aus appsettings.json
