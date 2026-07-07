@@ -5,8 +5,8 @@ using Xunit;
 namespace miEUDIverifier.Tests.Models;
 
 /// <summary>
-/// Tests für <see cref="IdentityData"/>.
-/// IdentityData ist das Ergebnis-Objekt nach einem erfolgreichen Wallet-Scan.
+/// Tests for <see cref="IdentityData"/>.
+/// IdentityData is the result object after a successful wallet scan.
 /// </summary>
 public class IdentityDataTests
 {
@@ -24,10 +24,10 @@ public class IdentityDataTests
     }
 
     [Theory]
-    [InlineData(null,           "Wolfgang",  "1976-09-24")]  // Kein Familienname
-    [InlineData("Mitterbucher", null,         "1976-09-24")]  // Kein Vorname
-    [InlineData("Mitterbucher", "Wolfgang",   null)]          // Kein Geburtsdatum
-    [InlineData(null,           null,         null)]          // Alles fehlt
+    [InlineData(null,           "Wolfgang",  "1976-09-24")]  // No family name
+    [InlineData("Mitterbucher", null,         "1976-09-24")]  // No given name
+    [InlineData("Mitterbucher", "Wolfgang",   null)]          // No birth date
+    [InlineData(null,           null,         null)]          // Everything missing
     public void IsComplete_ReturnsFalse_WhenAnyFieldMissing(
         string? family, string? given, string? birth)
     {

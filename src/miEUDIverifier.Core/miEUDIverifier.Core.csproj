@@ -8,11 +8,11 @@
     <AssemblyName>miEUDIverifier.Core</AssemblyName>
     <RootNamespace>miEUDIverifier</RootNamespace>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- Description & weitere NuGet-Metadaten: siehe Directory.Build.props -->
+    <!-- Description & other NuGet metadata: see Directory.Build.props -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- QR-Code-Generierung -->
+    <!-- QR code generation -->
     <PackageReference Include="QRCoder" Version="1.6.0" />
     <!-- DI / Options / Logging (Abstractions) -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />

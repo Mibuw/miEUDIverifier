@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Alle Services, Models und Config kommen aus der Core-Library -->
+    <!-- All services, models and configuration come from the core library -->
     <ProjectReference Include="..\miEUDIverifier.Core\miEUDIverifier.Core.csproj" />
   </ItemGroup>
 

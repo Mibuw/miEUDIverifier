@@ -5,13 +5,13 @@ using Xunit;
 namespace miEUDIverifier.Tests.Services;
 
 /// <summary>
-/// Tests für <see cref="QrCodeService"/>.
-/// Der QR-Code-Service wandelt den Wallet-Deep-Link in ein PNG-Bild um,
-/// das auf der Webseite angezeigt und vom Nutzer mit der EUDI Wallet gescannt wird.
+/// Tests for <see cref="QrCodeService"/>.
+/// The QR code service converts the wallet deep link into a PNG image
+/// that is shown on the web page and scanned by the user with the EUDI Wallet.
 /// </summary>
 public class QrCodeServiceTests
 {
-    // Ein typischer OpenID4VP Deep-Link wie er im QR-Code landet
+    // A typical OpenID4VP deep link as it ends up in the QR code
     private const string SampleDeepLink =
         "openid4vp://?client_id=x509_san_dns%3Averifier-backend.eudiw.dev" +
         "&request_uri=https%3A%2F%2Fverifier-backend.eudiw.dev%2Fwallet%2Frequest.jwt%2Fabc123" +
@@ -34,7 +34,7 @@ public class QrCodeServiceTests
         // Act
         var png = QrCodeService.GeneratePng(SampleDeepLink);
 
-        // Assert: PNG-Dateien beginnen immer mit der PNG-Signatur (8 Bytes)
+        // Assert: PNG files always start with the PNG signature (8 bytes)
         // 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
         png.Should().HaveCountGreaterThan(8);
         png[0].Should().Be(0x89, because: "PNG-Signatur Byte 1");
@@ -46,7 +46,7 @@ public class QrCodeServiceTests
     [Fact]
     public void GeneratePng_ReturnsDifferentSizes_ForDifferentPixelsPerModule()
     {
-        // Ein höherer pixelsPerModule-Wert ergibt ein größeres Bild
+        // A higher pixelsPerModule value produces a larger image
         var small = QrCodeService.GeneratePng(SampleDeepLink, pixelsPerModule: 2);
         var large = QrCodeService.GeneratePng(SampleDeepLink, pixelsPerModule: 8);
 
@@ -57,7 +57,7 @@ public class QrCodeServiceTests
     [Fact]
     public void GeneratePng_ProducesDeterministicOutput_ForSameInput()
     {
-        // Zwei Aufrufe mit demselben Input sollen dasselbe Bild erzeugen
+        // Two calls with the same input should produce the same image
         var first  = QrCodeService.GeneratePng(SampleDeepLink);
         var second = QrCodeService.GeneratePng(SampleDeepLink);
 

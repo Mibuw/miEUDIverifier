@@ -1,4 +1,4 @@
-# Build-Output (wird im Container neu erzeugt)
+# Build output (regenerated inside the container)
 **/bin/
 **/obj/
 
@@ -9,7 +9,7 @@
 .claude/
 *.user
 
-# Zertifikate & Schlüsselmaterial – gehören nie ins Image
+# Certificates & key material – must never end up in the image
 Cert/
 *.pfx
 *.pem
@@ -17,9 +17,9 @@ Cert/
 *.crt
 *.p12
 
-# Docker-Dateien selbst
+# Docker files themselves
 Dockerfile
 .dockerignore
 
-# Doku
+# Docs
 README.md
