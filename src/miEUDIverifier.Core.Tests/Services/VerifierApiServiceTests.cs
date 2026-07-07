@@ -13,20 +13,20 @@ using Xunit;
 namespace miEUDIverifier.Tests.Services;
 
 /// <summary>
-/// Tests für <see cref="VerifierApiService"/>.
+/// Tests for <see cref="VerifierApiService"/>.
 ///
-/// Der VerifierApiService ist das Herzstück der Library – er:
-///   1. Initialisiert eine OpenID4VP-Transaction beim EUDI-Verifier-Backend
-///   2. Pollt auf die Wallet-Antwort
-///   3. Extrahiert Identitätsdaten (Name, Vorname, Geburtsdatum) aus dem VP-Token
+/// The VerifierApiService is the heart of the library – it:
+///   1. Initializes an OpenID4VP transaction at the EUDI verifier backend
+///   2. Polls for the wallet response
+///   3. Extracts identity data (family name, given name, birth date) from the VP token
 /// </summary>
 public class VerifierApiServiceTests
 {
-    // ── Hilfsmethoden ─────────────────────────────────────────────────────────
+    // ── Helper methods ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Erstellt einen VerifierApiService mit einem kontrollierten HTTP-Handler.
-    /// Alle echten Netzwerkaufrufe werden abgefangen.
+    /// Creates a VerifierApiService with a controlled HTTP handler.
+    /// All real network calls are intercepted.
     /// </summary>
     private static VerifierApiService CreateService(
         Func<HttpRequestMessage, HttpResponseMessage> handler,
@@ -40,8 +40,8 @@ public class VerifierApiServiceTests
         var options = Options.Create(settings ?? new VerifierSettings
         {
             BackendUrl         = "https://verifier-backend.eudiw.dev",
-            PollIntervalSeconds = 0,   // Kein Warten zwischen Polls in Tests
-            PollTimeoutSeconds  = 2,   // Kurzer Timeout für Timeout-Tests
+            PollIntervalSeconds = 0,   // No waiting between polls in tests
+            PollTimeoutSeconds  = 2,   // Short timeout for the timeout tests
         });
         return new VerifierApiService(httpClient, options, NullLogger<VerifierApiService>.Instance);
     }
@@ -51,7 +51,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task InitializeTransactionAsync_ReturnsTransactionId_WhenBackendRespondsOk()
     {
-        // Arrange: Backend antwortet mit einer gültigen Transaction
+        // Arrange: backend responds with a valid transaction
         var service = CreateService(_ => HttpResponseFactory.Ok("""
             {
               "transaction_id": "abc-123-xyz",
@@ -73,7 +73,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task InitializeTransactionAsync_SendsPidDcqlQuery_WithRequiredClaims()
     {
-        // Arrange: HTTP-Request abfangen und Body prüfen
+        // Arrange: intercept the HTTP request and inspect the body
         string? capturedBody = null;
         var service = CreateService(req =>
         {
@@ -87,7 +87,7 @@ public class VerifierApiServiceTests
         // Act
         await service.InitializeTransactionAsync();
 
-        // Assert: Der gesendete DCQL-Query muss alle drei PID-Felder enthalten
+        // Assert: the DCQL query that was sent must contain all three PID fields
         capturedBody.Should().NotBeNull();
         capturedBody.Should().Contain("mso_mdoc",            because: "PID wird als mDoc übertragen");
         capturedBody.Should().Contain("eu.europa.ec.eudi.pid.1", because: "das ist der PID-Namespace");
@@ -114,7 +114,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task InitializeTransactionAsync_DoesNotSendIssuerChain_WhenNotConfigured()
     {
-        // Arrange: kein IssuerChain konfiguriert → darf nicht im Request erscheinen
+        // Arrange: no IssuerChain configured → must not appear in the request
         string? capturedBody = null;
         var service = CreateService(req =>
         {
@@ -127,8 +127,8 @@ public class VerifierApiServiceTests
 
         await service.InitializeTransactionAsync();
 
-        // issuer_chain: null oder fehlendes Feld verursachen InvalidIssuerChain-Fehler
-        // → darf nicht serialisiert werden
+        // issuer_chain: null or a missing field causes an InvalidIssuerChain error
+        // → must not be serialized
         capturedBody.Should().NotContain("issuer_chain",
             because: "leerer Chain wird weggelassen (JsonIgnore WhenWritingNull)");
     }
@@ -138,7 +138,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task ExtractIdentityDataAsync_ExtractsAllThreeFields_FromDecodedCredentials()
     {
-        // Arrange: Backend gibt bereits dekodierte Credentials zurück (Format A)
+        // Arrange: backend returns already decoded credentials (format A)
         var service = CreateService(_ => HttpResponseFactory.NotFound());
 
         var attributes = JsonDocument.Parse("""
@@ -174,8 +174,8 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task ExtractIdentityDataAsync_CallsUtilityEndpoint_ForVpTokenObject()
     {
-        // Arrange: vp_token ist ein Objekt mit base64-codierten CBOR-Daten (Format B)
-        // Der Utility-Endpunkt /utilities/validations/msoMdoc/deviceResponse wird aufgerufen
+        // Arrange: vp_token is an object with base64-encoded CBOR data (format B)
+        // The utility endpoint /utilities/validations/msoMdoc/deviceResponse gets called
         bool utilityEndpointCalled = false;
 
         var service = CreateService(req =>
@@ -199,7 +199,7 @@ public class VerifierApiServiceTests
             return HttpResponseFactory.NotFound();
         });
 
-        // vp_token als Objekt: { "credential-id": ["base64-DeviceResponse"] }
+        // vp_token as an object: { "credential-id": ["base64-DeviceResponse"] }
         using var doc = JsonDocument.Parse("""{"cred-id-mdoc": ["dGVzdA=="]}""");
         var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
 
@@ -218,7 +218,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task ExtractIdentityDataAsync_ConvertsUnixTimestampMillis_ToBirthDateString()
     {
-        // Arrange: Geburtsdatum kommt als Unix-Timestamp in Millisekunden
+        // Arrange: birth date arrives as a Unix timestamp in milliseconds
         // 212371200000 ms = 1976-09-24
         var service = CreateService(req =>
             HttpResponseFactory.Ok("""
@@ -240,7 +240,7 @@ public class VerifierApiServiceTests
         // Act
         var identity = await service.ExtractIdentityDataAsync(envelope);
 
-        // Assert: Timestamp muss in lesbares ISO-Datum umgewandelt werden
+        // Assert: the timestamp must be converted into a readable ISO date
         identity.BirthDate.Should().Be("1976-09-24",
             because: "212371200000ms entspricht dem 24. September 1976");
     }
@@ -248,8 +248,8 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task ExtractIdentityDataAsync_ConvertsNegativeUnixTimestampMillis_ToBirthDateBefore1970()
     {
-        // Arrange: Geburtsdatum vor 1970 → negativer Unix-Timestamp in Millisekunden
-        // -80870400000 ms = 1967-06-10 (Regressionstest: Betrag entscheidet ms vs. s)
+        // Arrange: birth date before 1970 → negative Unix timestamp in milliseconds
+        // -80870400000 ms = 1967-06-10 (regression test: magnitude decides ms vs. s)
         var service = CreateService(req =>
             HttpResponseFactory.Ok("""
                 [{
@@ -270,7 +270,7 @@ public class VerifierApiServiceTests
         // Act
         var identity = await service.ExtractIdentityDataAsync(envelope);
 
-        // Assert: negativer Timestamp darf nicht als Rohwert durchfallen
+        // Assert: a negative timestamp must not fall through as the raw value
         identity.BirthDate.Should().Be("1967-06-10",
             because: "-80870400000ms entspricht dem 10. Juni 1967");
     }
@@ -318,7 +318,7 @@ public class VerifierApiServiceTests
     {
         // Arrange
         var service = CreateService(_ => HttpResponseFactory.NotFound());
-        var envelope = new WalletResponseEnvelope();  // kein VpToken, keine Credentials
+        var envelope = new WalletResponseEnvelope();  // no VpToken, no credentials
 
         // Act
         var identity = await service.ExtractIdentityDataAsync(envelope);
@@ -335,7 +335,7 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task WaitForWalletResponseAsync_ReturnsEnvelope_WhenStatusIsSubmitted()
     {
-        // Arrange: erster Poll gibt "requested", zweiter "submitted" zurück
+        // Arrange: first poll returns "requested", second returns "submitted"
         var callCount = 0;
         var service   = CreateService(_ =>
         {
@@ -356,8 +356,8 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task WaitForWalletResponseAsync_DetectsResponse_WhenVpTokenPresent()
     {
-        // Arrange: Backend gibt kein "status"-Feld, aber einen vp_token
-        // (manche Backend-Versionen nutzen dieses Format)
+        // Arrange: backend returns no "status" field but a vp_token
+        // (some backend versions use this format)
         var service = CreateService(_ => HttpResponseFactory.Ok("""
             {"vp_token": {"cred-id": ["dGVzdA=="]}}
             """));
@@ -365,7 +365,7 @@ public class VerifierApiServiceTests
         // Act
         var envelope = await service.WaitForWalletResponseAsync("tx-002");
 
-        // Assert: Response wird erkannt, auch ohne explizites "status"-Feld
+        // Assert: the response is detected even without an explicit "status" field
         envelope.HasVpToken.Should().BeTrue(
             because: "vp_token-Präsenz signalisiert eine fertige Antwort");
     }
@@ -373,13 +373,13 @@ public class VerifierApiServiceTests
     [Fact]
     public async Task WaitForWalletResponseAsync_ThrowsTimeout_WhenNoResponseWithinLimit()
     {
-        // Arrange: Backend antwortet immer mit 404 (Wallet hat noch nicht reagiert)
+        // Arrange: backend always responds with 404 (wallet has not reacted yet)
         var service = CreateService(_ => HttpResponseFactory.NotFound(),
             new VerifierSettings
             {
                 BackendUrl          = "https://x.com",
                 PollIntervalSeconds = 0,
-                PollTimeoutSeconds  = 1,  // sehr kurzer Timeout für den Test
+                PollTimeoutSeconds  = 1,  // very short timeout for this test
             });
 
         // Act & Assert

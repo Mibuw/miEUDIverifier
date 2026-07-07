@@ -45,12 +45,12 @@ public class WalletResponseEnvelope
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    // Status kann je nach Backend-Version "submitted", "complete" o.ä. sein
+    // Depending on the backend version the status may be "submitted", "complete", etc.
     public bool IsSubmitted =>
         string.Equals(Status, "submitted", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(Status, "complete",  StringComparison.OrdinalIgnoreCase);
 
-    // Fallback: vp_token vorhanden → Antwort liegt vor, auch ohne Status-Feld
+    // Fallback: vp_token present → a response exists, even without a status field
     public bool HasVpToken =>
         VpToken.HasValue && VpToken.Value.ValueKind != System.Text.Json.JsonValueKind.Null;
 

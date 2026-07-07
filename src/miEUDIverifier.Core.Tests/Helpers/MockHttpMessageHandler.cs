@@ -3,8 +3,8 @@ using System.Net;
 namespace miEUDIverifier.Tests.Helpers;
 
 /// <summary>
-/// Ersetzte den echten HTTP-Transport durch eine konfigurierbare Lambda-Funktion.
-/// Wird in Tests verwendet um Netzwerkaufrufe zu simulieren ohne echte HTTP-Verbindungen.
+/// Replaces the real HTTP transport with a configurable lambda function.
+/// Used in tests to simulate network calls without real HTTP connections.
 /// </summary>
 public class MockHttpMessageHandler : HttpMessageHandler
 {
@@ -19,7 +19,7 @@ public class MockHttpMessageHandler : HttpMessageHandler
 }
 
 /// <summary>
-/// Hilfsmethoden für typsichere JSON-Antworten in Tests.
+/// Helper methods for type-safe JSON responses in tests.
 /// </summary>
 public static class HttpResponseFactory
 {

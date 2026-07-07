@@ -5,7 +5,7 @@ using miEUDIverifier.WebServer;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-// ── 1. WebApplication aufbauen ────────────────────────────────────────────────
+// ── 1. Build the WebApplication ───────────────────────────────────────────────
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddEnvironmentVariables("EUDI_");
 builder.Logging
@@ -31,9 +31,9 @@ builder.Services.AddHttpClient<VerifierApiService>(client =>
 var app = builder.Build();
 var verifier = app.Services.GetRequiredService<VerifierApiService>();
 
-// ── Lokale Hilfsfunktionen ────────────────────────────────────────────────────
+// ── Local helper functions ────────────────────────────────────────────────────
 
-// Startet eine neue Transaction und aktualisiert den AppState
+// Starts a new transaction and updates the AppState
 async Task StartNewTransaction(AppState state, CancellationToken ct)
 {
     var transaction = await verifier.InitializeTransactionAsync(ct);
@@ -51,10 +51,10 @@ async Task StartNewTransaction(AppState state, CancellationToken ct)
     Console.WriteLine($"  Transaction-ID : {transaction.TransactionId}");
 }
 
-// Startet den Hintergrund-Polling-Task fuer eine Transaction
+// Starts the background polling task for a transaction
 void StartPolling(AppState state, CancellationToken appStopping)
 {
-    // Alten Polling-Task abbrechen
+    // Cancel any previous polling task
     state.PollingCts?.Cancel();
     var cts = CancellationTokenSource.CreateLinkedTokenSource(appStopping);
     state.PollingCts = cts;
@@ -87,11 +87,11 @@ void StartPolling(AppState state, CancellationToken appStopping)
     }, cts.Token);
 }
 
-// ── 2. Session-Store & Browser-Sessions ───────────────────────────────────────
+// ── 2. Session store & browser sessions ───────────────────────────────────────
 Console.WriteLine("\n  EUDI Wallet Verifier – Starte ...");
 
-// Zentraler Session-Store: sowohl die REST-API als auch die Demo-Seite (per Cookie)
-// legen hier ihre Sessions ab → jeder Browser bzw. API-Client bekommt eine eigene.
+// Central session store: both the REST API and the demo page (via cookie) keep their
+// sessions here → every browser and API client gets its own session.
 var sessions = new SessionStore(TimeSpan.FromMinutes(settings.SessionTtlMinutes));
 using var sessionPurgeTimer = new Timer(
     _ => { try { sessions.PurgeExpired(); } catch { /* best effort */ } },
@@ -99,12 +99,12 @@ using var sessionPurgeTimer = new Timer(
 
 const string BrowserSessionCookie = "mieudi_sid";
 
-// Liefert die zum Browser-Cookie gehörende Session – oder null, wenn keine (mehr) existiert.
+// Returns the session belonging to the browser cookie – or null if none exists (anymore).
 AppState? GetBrowserSession(HttpContext ctx) =>
     ctx.Request.Cookies.TryGetValue(BrowserSessionCookie, out var sid)
     && sessions.TryGet(sid, out var s) ? s : null;
 
-// Holt die Browser-Session oder legt eine neue an (Transaction + Polling + Cookie setzen).
+// Gets the browser session or creates a new one (transaction + polling + cookie).
 async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
 {
     var existing = GetBrowserSession(ctx);
@@ -125,7 +125,7 @@ async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
     return state;
 }
 
-// ── 3. Web-Routen (Demo-Seite, pro Browser-Session via Cookie) ─────────────────
+// ── 3. Web routes (demo page, per browser session via cookie) ──────────────────
 
 app.MapGet("/", async (HttpContext ctx) =>
 {
@@ -151,7 +151,7 @@ app.MapGet("/api/status", (HttpContext ctx) =>
     });
 });
 
-// Neuer Request – frische Transaction für die aktuelle Browser-Session
+// New request – fresh transaction for the current browser session
 app.MapPost("/api/reset", async (HttpContext ctx) =>
 {
     try
@@ -159,7 +159,7 @@ app.MapPost("/api/reset", async (HttpContext ctx) =>
         var state = GetBrowserSession(ctx);
         if (state is null)
         {
-            // Session abgelaufen/fehlt → neue anlegen (setzt auch das Cookie)
+            // Session expired/missing → create a new one (also sets the cookie)
             state = await GetOrCreateBrowserSessionAsync(ctx);
         }
         else
@@ -189,10 +189,10 @@ app.MapGet("/api/debug", (HttpContext ctx) =>
     });
 });
 
-// ── 3b. Session-basierte REST-API ──────────────────────────────────────────────
-// Ermöglicht beliebig viele parallele Verifikationen unabhängig von der Demo-Seite.
+// ── 3b. Session-based REST API ─────────────────────────────────────────────────
+// Lets external apps run any number of verifications in parallel, independent of the demo page.
 
-// POST /api/verification – startet eine neue Verifikation, liefert Session-ID + Deep-Link
+// POST /api/verification – starts a new verification, returns session id + deep link
 app.MapPost("/api/verification", async () =>
 {
     try
@@ -215,7 +215,7 @@ app.MapPost("/api/verification", async () =>
     }
 });
 
-// GET /api/verification/{id}/qrcode – QR-Code als PNG-Bild
+// GET /api/verification/{id}/qrcode – QR code as a PNG image
 app.MapGet("/api/verification/{id}/qrcode", (string id) =>
 {
     if (!sessions.TryGet(id, out var state) || string.IsNullOrEmpty(state.QrBase64))
@@ -225,7 +225,7 @@ app.MapGet("/api/verification/{id}/qrcode", (string id) =>
     return Results.File(png, "image/png");
 });
 
-// GET /api/verification/{id}/status – aktueller Status der Verifikation
+// GET /api/verification/{id}/status – current status of the verification
 app.MapGet("/api/verification/{id}/status", (string id) =>
 {
     if (!sessions.TryGet(id, out var state))
@@ -239,7 +239,7 @@ app.MapGet("/api/verification/{id}/status", (string id) =>
     });
 });
 
-// GET /api/verification/{id}/data – extrahierte PID-Daten (wenn vorhanden)
+// GET /api/verification/{id}/data – extracted PID data (once available)
 app.MapGet("/api/verification/{id}/data", (string id) =>
 {
     if (!sessions.TryGet(id, out var state))
@@ -258,12 +258,12 @@ app.MapGet("/api/verification/{id}/data", (string id) =>
         });
     }
 
-    // Noch keine Daten (waiting) oder Fehler → 409, damit Clients weiterpollen können
+    // No data yet (waiting) or error → 409 so clients can keep polling
     return Results.Json(new { id, status = state.Status, error = state.ErrorMessage },
         statusCode: 409);
 });
 
-// DELETE /api/verification/{id} – Session verwerfen und Polling abbrechen
+// DELETE /api/verification/{id} – discard the session and cancel its polling
 app.MapDelete("/api/verification/{id}", (string id) =>
 {
     if (!sessions.Remove(id, out var state))
@@ -273,11 +273,11 @@ app.MapDelete("/api/verification/{id}", (string id) =>
     return Results.NoContent();
 });
 
-// ── 4. Starten ────────────────────────────────────────────────────────────────
-// Kestrel liest Endpoints + Zertifikat direkt aus appsettings.json
-// (Kestrel:Endpoints übersteuert app.Urls – kein app.Urls.Add() nötig)
+// ── 4. Start ──────────────────────────────────────────────────────────────────
+// Kestrel reads endpoints + certificate directly from appsettings.json
+// (Kestrel:Endpoints overrides app.Urls – no app.Urls.Add() needed)
 
-// LAN-IP ermitteln
+// Determine the LAN IP
 var lanIp = System.Net.NetworkInformation.NetworkInterface
     .GetAllNetworkInterfaces()
     .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
@@ -303,7 +303,7 @@ if (lanIp != null)
 }
 Console.WriteLine($"  Beenden    : Strg+C\n");
 
-// Browser-URL: lokale HTTPS-Adresse wenn HTTPS aktiv, sonst lokaler HTTP-Fallback
+// Browser URL: local HTTPS address when HTTPS is active, otherwise local HTTP fallback
 var browserUrl = localHttps ?? localHttp;
 try { Process.Start(new ProcessStartInfo(browserUrl) { UseShellExecute = true }); }
 catch { Console.WriteLine($"  Bitte {browserUrl} manuell im Browser oeffnen."); }

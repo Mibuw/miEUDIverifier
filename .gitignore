@@ -8,7 +8,7 @@ obj/
 .vs/
 *.user
 
-# Zertifikate & Schlüsselmaterial — niemals ins Repo
+# Certificates & key material — never commit to the repo
 Cert/
 *.pfx
 *.pem
@@ -16,5 +16,5 @@ Cert/
 *.crt
 *.p12
 
-# Claude-lokale Dateien
+# Claude local files
 .claude/

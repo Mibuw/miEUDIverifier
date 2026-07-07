@@ -17,12 +17,12 @@ public class AppState
     public IdentityData? Identity     { get; set; }
     public string?       ErrorMessage { get; set; }
 
-    /// <summary>Letzter roher JSON-Response vom Verifier-Backend (für Debugging).</summary>
+    /// <summary>Last raw JSON response from the verifier backend (for debugging).</summary>
     public string? LastRawResponse { get; set; }
 
-    /// <summary>CancellationTokenSource des aktuellen Polling-Tasks.</summary>
+    /// <summary>CancellationTokenSource of the current polling task.</summary>
     public CancellationTokenSource? PollingCts { get; set; }
 
-    /// <summary>Erstellungszeitpunkt (UTC) – für die TTL-basierte Bereinigung von API-Sessions.</summary>
+    /// <summary>Creation time (UTC) – used for TTL-based eviction of API sessions.</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

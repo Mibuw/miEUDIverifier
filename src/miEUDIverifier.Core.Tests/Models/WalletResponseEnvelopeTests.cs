@@ -6,16 +6,16 @@ using Xunit;
 namespace miEUDIverifier.Tests.Models;
 
 /// <summary>
-/// Tests für die Status-Erkennung im <see cref="WalletResponseEnvelope"/>.
-/// Das Envelope wird beim Polling zurückgegeben und zeigt an ob die Wallet
-/// bereits geantwortet hat, noch wartet, oder ein Fehler aufgetreten ist.
+/// Tests for the status detection in <see cref="WalletResponseEnvelope"/>.
+/// The envelope is returned while polling and indicates whether the wallet
+/// has already answered, is still pending, or an error occurred.
 /// </summary>
 public class WalletResponseEnvelopeTests
 {
     [Theory]
-    [InlineData("submitted")]  // Standard-Status des EUDI-Backends
-    [InlineData("SUBMITTED")]  // Case-Insensitive
-    [InlineData("complete")]   // Alternative Backend-Implementierungen
+    [InlineData("submitted")]  // Default status of the EUDI backend
+    [InlineData("SUBMITTED")]  // Case-insensitive
+    [InlineData("complete")]   // Alternative backend implementations
     [InlineData("Complete")]
     public void IsSubmitted_ReturnsTrue_ForCompletedStatuses(string status)
     {
@@ -47,7 +47,7 @@ public class WalletResponseEnvelopeTests
     [Fact]
     public void HasVpToken_ReturnsTrue_WhenVpTokenIsJsonObject()
     {
-        // vp_token als JSON-Objekt: { "credential-id": ["base64-data"] }
+        // vp_token as a JSON object: { "credential-id": ["base64-data"] }
         using var doc = JsonDocument.Parse("""{"cred-id": ["dGVzdA=="]}""");
         var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
 

@@ -192,12 +192,12 @@ public class VerifierApiService
     // ── Step 3: Extract Identity Data ─────────────────────────────────────────
 
     /// <summary>
-    /// Extrahiert Identitätsdaten aus dem Wallet-Response.
-    /// Unterstützt drei Formate:
-    ///   A) Backend liefert bereits dekodierte Attribute (credentials[])
-    ///   B) vp_token ist ein Objekt mit { credential-id: [base64-DeviceResponse] }
-    ///      → Dekodierung über den Utility-Endpunkt des Backends
-    ///   C) vp_token ist ein JWT-String (SD-JWT)
+    /// Extracts identity data from the wallet response.
+    /// Supports three formats:
+    ///   A) The backend already returns decoded attributes (credentials[])
+    ///   B) vp_token is an object of { credential-id: [base64-DeviceResponse] }
+    ///      → decoded via the backend's utility endpoint
+    ///   C) vp_token is a JWT string (SD-JWT)
     /// </summary>
     public async Task<IdentityData> ExtractIdentityDataAsync(
         WalletResponseEnvelope envelope,
@@ -205,7 +205,7 @@ public class VerifierApiService
     {
         var identity = new IdentityData();
 
-        // A) Dekodierte Credentials vom Backend
+        // A) Credentials already decoded by the backend
         if (envelope.Credentials != null && envelope.Credentials.Count > 0)
         {
             foreach (var cred in envelope.Credentials)
@@ -244,7 +244,7 @@ public class VerifierApiService
         return identity;
     }
 
-    // ── B) CBOR mDoc via Utility-Endpunkt dekodieren ──────────────────────────
+    // ── B) Decode CBOR mDoc via the utility endpoint ──────────────────────────
 
     private async Task<IdentityData> DecodeVpTokenObjectAsync(
         JsonElement vpToken,
@@ -331,7 +331,7 @@ public class VerifierApiService
         }
     }
 
-    // ── Attribute-Extraktion ──────────────────────────────────────────────────
+    // ── Attribute extraction ──────────────────────────────────────────────────
 
     // mso_mdoc: { "eu.europa.ec.eudi.pid.1": { "family_name": "...", ... } }
     private static void ExtractFromMdoc(JsonElement attributes, IdentityData identity)
@@ -443,32 +443,32 @@ public class VerifierApiService
     }
 
     /// <summary>
-    /// Konvertiert ein Datums-Feld aus dem CBOR-Decoder.
-    /// Der Utility-Endpunkt liefert birth_date manchmal als Unix-Timestamp
-    /// in Millisekunden (z.B. 212371200000 = 1976-09-24) statt als ISO-String.
+    /// Converts a date field coming from the CBOR decoder.
+    /// The utility endpoint sometimes returns birth_date as a Unix timestamp
+    /// in milliseconds (e.g. 212371200000 = 1976-09-24) instead of an ISO string.
     /// </summary>
     private static string? ParseDateValue(JsonElement el)
     {
-        // Bereits ein ISO-Datum-String → direkt zurückgeben
+        // Already an ISO date string → return as is
         if (el.ValueKind == JsonValueKind.String)
             return el.GetString();
 
         if (el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out var raw))
         {
-            // Heuristik: Betrag > 1e10 → vermutlich Millisekunden (> Jahr 2286 in Sekunden),
-            // kleinere Beträge → Sekunden seit Epoch. Der Betrag ist entscheidend, damit
-            // negative Timestamps (Geburtsdatum vor 1970) korrekt als ms erkannt werden.
+            // Heuristic: magnitude > 1e10 → probably milliseconds (> year 2286 in seconds),
+            // smaller magnitudes → seconds since epoch. The magnitude matters so that
+            // negative timestamps (birth dates before 1970) are correctly detected as ms.
             try
             {
                 var dt = Math.Abs(raw) > 10_000_000_000L
                     ? DateTimeOffset.FromUnixTimeMilliseconds(raw)
                     : DateTimeOffset.FromUnixTimeSeconds(raw);
 
-                // Plausibilitätsprüfung: Geburtsdatum zwischen 1900 und heute
+                // Plausibility check: birth date between 1900 and today
                 if (dt.Year >= 1900 && dt.Year <= DateTimeOffset.UtcNow.Year)
                     return dt.ToString("yyyy-MM-dd");
             }
-            catch { /* Fallback auf Rohwert */ }
+            catch { /* fall back to the raw value */ }
 
             return raw.ToString();
         }
