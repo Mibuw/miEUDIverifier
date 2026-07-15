@@ -46,7 +46,7 @@ data – no manual reload needed.
 
 ## Try it (test endpoint)
 
-A public test instance is available at **http://miEUDIverifier.mitterbucher.com:5050** —
+A public test instance is available at **https://miEUDIverifier.mitterbucher.com** —
 just open it and click **New request** to get a fresh QR code, then scan it with your EUDI Wallet App.
 
 > _No guarantee of availability_ — this endpoint may be offline at any time. To run your own
