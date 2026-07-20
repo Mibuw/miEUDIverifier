@@ -76,17 +76,38 @@ public class VerifierApiService
             },
         };
 
-        // Two alternative options → the wallet may satisfy the request with EITHER the
-        // mso_mdoc PID OR the SD-JWT VC PID, whichever it holds.
+        // Alternative options → the wallet may satisfy the request with ANY of these,
+        // whichever PID it holds.
+        var options = new List<List<string>>
+        {
+            new List<string> { credentialId + "-mdoc" },
+            new List<string> { credentialId + "-sdjwt" },
+        };
+
+        // German EUDI Wallet (Bundesdruckerei prototype PID): own vct and the OIDC-style
+        // claim name "birthdate" instead of "birth_date" → needs a separate DCQL entry.
+        if (_settings.GermanPidVctValues is { Count: > 0 })
+        {
+            credentials.Add(new DcqlCredential
+            {
+                Id     = credentialId + "-sdjwt-de",
+                Format = _settings.SdJwtFormat,
+                Meta   = new DcqlCredentialMeta { VctValues = _settings.GermanPidVctValues },
+                Claims = new List<DcqlClaim>
+                {
+                    new DcqlClaim { Path = new List<string> { "family_name" } },
+                    new DcqlClaim { Path = new List<string> { "given_name" } },
+                    new DcqlClaim { Path = new List<string> { "birthdate" } },
+                },
+            });
+            options.Add(new List<string> { credentialId + "-sdjwt-de" });
+        }
+
         var credentialSets = new List<DcqlCredentialSet>
         {
             new DcqlCredentialSet
             {
-                Options = new List<List<string>>
-                {
-                    new List<string> { credentialId + "-mdoc" },
-                    new List<string> { credentialId + "-sdjwt" },
-                },
+                Options = options,
                 Purpose = "Identitaetsnachweis - Name und Geburtsdatum",
             },
         };
