@@ -2,6 +2,7 @@ using System.Diagnostics;
 using miEUDIverifier.Configuration;
 using miEUDIverifier.Services;
 using miEUDIverifier.WebServer;
+using Microsoft.Extensions.Options;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
@@ -21,20 +22,52 @@ var settings = builder.Configuration
 builder.Services.Configure<VerifierSettings>(
     builder.Configuration.GetSection(VerifierSettings.SectionName));
 
-builder.Services.AddHttpClient<VerifierApiService>(client =>
+// Named verifier backends (multi-ecosystem): e.g. "eu" = EUDI reference (eudiw.dev),
+// "de" = German EUDI Wallet (own backend with a SPRIND-issued RP access certificate, added
+// later). Falls back to a single "eu" backend from BackendUrl when Backends is not configured.
+var backendUrls = (settings.Backends is { Count: > 0 }
+        ? settings.Backends
+        : new Dictionary<string, string> { ["eu"] = settings.BackendUrl })
+    .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+    .ToDictionary(kv => kv.Key, kv => kv.Value.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
+
+if (backendUrls.Count == 0)
+    backendUrls["eu"] = "https://verifier-backend.eudiw.dev";
+
+var defaultBackend = backendUrls.ContainsKey(settings.DefaultBackend)
+    ? settings.DefaultBackend
+    : backendUrls.Keys.First();
+
+foreach (var (key, url) in backendUrls)
 {
-    client.BaseAddress = new Uri(settings.BackendUrl.TrimEnd('/') + "/");
-    client.DefaultRequestHeaders.Add("Accept", "application/json");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
+    var baseUri = new Uri(url + "/");
+    builder.Services.AddHttpClient($"verifier-{key}", client =>
+    {
+        client.BaseAddress = baseUri;
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        client.Timeout = TimeSpan.FromSeconds(30);
+    });
+}
 
 var app = builder.Build();
-var verifier = app.Services.GetRequiredService<VerifierApiService>();
+
+// One VerifierApiService per configured backend, keyed by backend name.
+var httpFactory     = app.Services.GetRequiredService<IHttpClientFactory>();
+var verifierOptions = app.Services.GetRequiredService<IOptions<VerifierSettings>>();
+var verifierLogger  = app.Services.GetRequiredService<ILogger<VerifierApiService>>();
+var services = backendUrls.Keys.ToDictionary(
+    key => key,
+    key => new VerifierApiService(httpFactory.CreateClient($"verifier-{key}"), verifierOptions, verifierLogger),
+    StringComparer.OrdinalIgnoreCase);
+
+// Resolves the service for a backend key, falling back to the default backend.
+VerifierApiService ServiceFor(string? backend) =>
+    backend is not null && services.TryGetValue(backend, out var s) ? s : services[defaultBackend];
 
 // ── Local helper functions ────────────────────────────────────────────────────
 
-// Starts a new transaction and updates the AppState
-async Task StartNewTransaction(AppState state, CancellationToken ct)
+// Starts a new transaction (against the given backend) and updates the AppState
+async Task StartNewTransaction(AppState state, VerifierApiService verifier, CancellationToken ct)
 {
     var transaction = await verifier.InitializeTransactionAsync(ct);
     var deepLink    = transaction.BuildWalletDeepLink(settings.AuthorizationRequestScheme);
@@ -51,8 +84,8 @@ async Task StartNewTransaction(AppState state, CancellationToken ct)
     Console.WriteLine($"  Transaction-ID : {transaction.TransactionId}");
 }
 
-// Starts the background polling task for a transaction
-void StartPolling(AppState state, CancellationToken appStopping)
+// Starts the background polling task for a transaction (against the given backend)
+void StartPolling(AppState state, VerifierApiService verifier, CancellationToken appStopping)
 {
     // Cancel any previous polling task
     state.PollingCts?.Cancel();
@@ -89,6 +122,7 @@ void StartPolling(AppState state, CancellationToken appStopping)
 
 // ── 2. Session store & browser sessions ───────────────────────────────────────
 Console.WriteLine("\n  EUDI Wallet Verifier – Starte ...");
+Console.WriteLine($"  Backends   : {string.Join(", ", backendUrls.Select(b => $"{b.Key}={b.Value}"))} (default: {defaultBackend})");
 
 // Central session store: both the REST API and the demo page (via cookie) keep their
 // sessions here → every browser and API client gets its own session.
@@ -110,9 +144,13 @@ async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
     var existing = GetBrowserSession(ctx);
     if (existing is not null) return existing;
 
-    var state = new AppState();
-    await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
-    StartPolling(state, app.Lifetime.ApplicationStopping);
+    // Optional ?backend=eu|de selects the trust ecosystem for this browser session.
+    var requested = ctx.Request.Query["backend"].FirstOrDefault();
+    var backend   = requested is not null && services.ContainsKey(requested) ? requested : defaultBackend;
+
+    var state = new AppState { Backend = backend };
+    await StartNewTransaction(state, services[backend], app.Lifetime.ApplicationStopping);
+    StartPolling(state, services[backend], app.Lifetime.ApplicationStopping);
 
     var id = sessions.Add(state);
     ctx.Response.Cookies.Append(BrowserSessionCookie, id, new CookieOptions
@@ -143,6 +181,7 @@ app.MapGet("/api/status", (HttpContext ctx) =>
     return Results.Json(new
     {
         status     = state.Status,
+        backend    = state.Backend,
         familyName = state.Identity?.FamilyName,
         givenName  = state.Identity?.GivenName,
         birthDate  = state.Identity?.BirthDate,
@@ -151,7 +190,8 @@ app.MapGet("/api/status", (HttpContext ctx) =>
     });
 });
 
-// New request – fresh transaction for the current browser session
+// New request – fresh transaction for the current browser session.
+// Optional ?backend=eu|de re-targets the session to a different trust ecosystem.
 app.MapPost("/api/reset", async (HttpContext ctx) =>
 {
     try
@@ -164,16 +204,28 @@ app.MapPost("/api/reset", async (HttpContext ctx) =>
         }
         else
         {
-            await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
-            StartPolling(state, app.Lifetime.ApplicationStopping);
+            var requested = ctx.Request.Query["backend"].FirstOrDefault();
+            if (requested is not null && services.ContainsKey(requested))
+                state.Backend = requested;
+
+            var svc = ServiceFor(state.Backend);
+            await StartNewTransaction(state, svc, app.Lifetime.ApplicationStopping);
+            StartPolling(state, svc, app.Lifetime.ApplicationStopping);
         }
-        return Results.Json(new { qrBase64 = state.QrBase64 });
+        return Results.Json(new { qrBase64 = state.QrBase64, backend = state.Backend });
     }
     catch (Exception ex)
     {
         return Results.Json(new { error = ex.Message }, statusCode: 500);
     }
 });
+
+// Lists the configured verifier backends (trust ecosystems) and the default.
+app.MapGet("/api/backends", () => Results.Json(new
+{
+    defaultBackend,
+    backends = services.Keys.ToArray(),
+}));
 
 app.MapGet("/api/debug", (HttpContext ctx) =>
 {
@@ -192,19 +244,29 @@ app.MapGet("/api/debug", (HttpContext ctx) =>
 // ── 3b. Session-based REST API ─────────────────────────────────────────────────
 // Lets external apps run any number of verifications in parallel, independent of the demo page.
 
-// POST /api/verification – starts a new verification, returns session id + deep link
-app.MapPost("/api/verification", async () =>
+// POST /api/verification[?backend=eu|de] – starts a new verification against the chosen
+// trust ecosystem, returns session id + deep link. Unknown/unconfigured backend → 400.
+app.MapPost("/api/verification", async (HttpContext ctx) =>
 {
+    var requested = ctx.Request.Query["backend"].FirstOrDefault() ?? defaultBackend;
+    if (!services.TryGetValue(requested, out var svc))
+    {
+        return Results.Json(
+            new { error = $"Unknown or unconfigured backend '{requested}'.", availableBackends = services.Keys.ToArray() },
+            statusCode: 400);
+    }
+
     try
     {
-        var state = new AppState();
-        await StartNewTransaction(state, app.Lifetime.ApplicationStopping);
-        StartPolling(state, app.Lifetime.ApplicationStopping);
+        var state = new AppState { Backend = requested };
+        await StartNewTransaction(state, svc, app.Lifetime.ApplicationStopping);
+        StartPolling(state, svc, app.Lifetime.ApplicationStopping);
 
         var id = sessions.Add(state);
         return Results.Created($"/api/verification/{id}", new
         {
             id,
+            backend  = requested,
             status   = state.Status,   // waiting
             deepLink = state.DeepLink,
         });
@@ -234,8 +296,9 @@ app.MapGet("/api/verification/{id}/status", (string id) =>
     return Results.Json(new
     {
         id,
-        status = state.Status,          // waiting | complete | partial | error
-        error  = state.ErrorMessage,
+        backend = state.Backend,
+        status  = state.Status,         // waiting | complete | partial | error
+        error   = state.ErrorMessage,
     });
 });
 
@@ -250,6 +313,7 @@ app.MapGet("/api/verification/{id}/data", (string id) =>
         return Results.Json(new
         {
             id,
+            backend    = state.Backend,
             status     = state.Status,
             familyName = state.Identity.FamilyName,
             givenName  = state.Identity.GivenName,
@@ -259,7 +323,7 @@ app.MapGet("/api/verification/{id}/data", (string id) =>
     }
 
     // No data yet (waiting) or error → 409 so clients can keep polling
-    return Results.Json(new { id, status = state.Status, error = state.ErrorMessage },
+    return Results.Json(new { id, backend = state.Backend, status = state.Status, error = state.ErrorMessage },
         statusCode: 409);
 });
 

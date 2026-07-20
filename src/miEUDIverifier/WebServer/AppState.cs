@@ -10,6 +10,9 @@ public class AppState
     /// <summary>waiting | complete | partial | error</summary>
     public string Status { get; set; } = "waiting";
 
+    /// <summary>Backend key this session talks to (e.g. "eu" or "de").</summary>
+    public string Backend { get; set; } = string.Empty;
+
     public string TransactionId { get; set; } = string.Empty;
     public string DeepLink      { get; set; } = string.Empty;
     public string QrBase64      { get; set; } = string.Empty;

@@ -134,6 +134,37 @@ unaffected.
 Unknown session ids return `404`. Sessions are evicted automatically after
 `SessionTtlMinutes` (default 30).
 
+### Multiple trust ecosystems (`?backend=`)
+
+A verifier backend signs every request object with **one** access certificate for **one** trust
+ecosystem, so different wallets need different backend instances (see below). The app can serve
+several from one deployment via **named backends**:
+
+| Call | Behaviour |
+|------|-----------|
+| `GET /api/backends` | Lists the configured backend keys and the default. |
+| `POST /api/verification?backend=<key>` | Starts the verification against that backend. Unknown/unconfigured key → `400`. |
+| `POST /api/reset?backend=<key>` | Re-targets the current demo session to another backend. |
+| `GET /?backend=<key>` | Demo page uses that backend for the new browser session. |
+
+The chosen backend is echoed back as `backend` in the status/data responses. Configure the
+backends via environment (fluent with the `EUDI_` prefix):
+
+```bash
+EUDI_VerifierSettings__Backends__eu="https://verifier-backend.eudiw.dev"   # EUDI reference wallet
+EUDI_VerifierSettings__Backends__de="http://eudi-verifier-backend-de:8080" # German EUDI Wallet (own backend)
+EUDI_VerifierSettings__DefaultBackend="eu"
+```
+
+When `Backends` is not set, the single `BackendUrl` is used as the `eu` backend (unchanged default).
+
+> **Why more than one backend?** The German EUDI Wallet (EUDIWalletDE) only trusts a verifier whose
+> certificate comes from the German Relying-Party Access CA (obtained via the **SPRIND** sandbox),
+> while the EUDI reference wallet trusts the eudiw.dev reference CA. One instance = one signing
+> certificate = one ecosystem. A ready-to-fill template for the German backend instance is in
+> [`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml) — drop in the
+> SPRIND-issued `.p12` and set `Backends__de`. Until then, only `eu` is active.
+
 ### Example
 
 ```bash

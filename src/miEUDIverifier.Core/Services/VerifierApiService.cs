@@ -130,8 +130,10 @@ public class VerifierApiService
             },
         };
 
+        // Log the actual target (the HttpClient base address), which may differ from
+        // _settings.BackendUrl when the service is bound to a named backend (eu/de).
         _logger.LogInformation("Initializing transaction at {Url}",
-            _settings.BackendUrl + "/ui/presentations");
+            new Uri(_http.BaseAddress!, "ui/presentations"));
 
         var response = await _http.PostAsJsonAsync(
             "/ui/presentations", request, JsonOptions, ct);
