@@ -164,6 +164,10 @@ When `Backends` is not set, the single `BackendUrl` is used as the `eu` backend 
 > certificate = one ecosystem. A ready-to-fill template for the German backend instance is in
 > [`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml) — drop in the
 > SPRIND-issued `.p12` and set `Backends__de`. Until then, only `eu` is active.
+>
+> Full background — trust model, why each wallet does or doesn't work, the SPRIND onboarding path
+> and the multi-backend design — is documented in
+> [docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md).
 
 ### Example
 
