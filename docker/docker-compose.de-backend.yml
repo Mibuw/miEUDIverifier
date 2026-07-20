@@ -1,0 +1,82 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# TEMPLATE — German EUDI Wallet (EUDIWalletDE / SPRIND) verifier backend
+#
+# The app already supports multiple trust ecosystems via named backends
+# (VerifierSettings.Backends → ?backend=eu|de). This file is the SECOND backend
+# instance for the German wallet. It stays a template until you receive a
+# Relying-Party Access Certificate from the SPRIND sandbox registrar; then fill in
+# the placeholders (◀── FILL) and deploy.
+#
+# Why a separate instance (see README): one verifier backend signs every request
+# object with ONE access certificate for ONE trust ecosystem. The German wallet
+# only trusts a cert from the German RP Access CA, so it needs its own instance
+# with its own keystore — the EU reference backend (eudiw.dev) cannot serve it.
+#
+# Prerequisites after SPRIND onboarding:
+#   1. Place the RP access certificate keystore at ./certs-de/keystore.p12
+#      (PKCS#12 with the private key + RP access cert chain from the registrar).
+#   2. Put its password in the environment (see VERIFIER_ACCESS_CERTIFICATE_* below).
+#   3. Point DNS eudi-backend-de.mitterbucher.com → this host and add a Caddy block
+#      (deploy-safe location: /opt/mipdfsign/deploy/sites.d/*.caddy):
+#
+#        eudi-backend-de.mitterbucher.com {
+#            reverse_proxy eudi-verifier-backend-de:8080
+#        }
+#
+#   4. Configure the app to expose the "de" backend (in the app's compose/env):
+#        EUDI_VerifierSettings__Backends__eu: "https://verifier-backend.eudiw.dev"
+#        EUDI_VerifierSettings__Backends__de: "http://eudi-verifier-backend-de:8080"
+#        EUDI_VerifierSettings__DefaultBackend: "eu"
+#      → external apps then select it with POST /api/verification?backend=de
+#
+# Deploy:  docker compose -f docker-compose.de-backend.yml up -d
+# ──────────────────────────────────────────────────────────────────────────────
+services:
+  eudi-verifier-backend-de:
+    image: ghcr.io/eu-digital-identity-wallet/eudi-srv-verifier-endpoint:latest
+    container_name: eudi-verifier-backend-de
+    restart: unless-stopped
+    environment:
+      # Public URL the German wallet uses to fetch the request object / post the response
+      VERIFIER_PUBLICURL: "https://eudi-backend-de.mitterbucher.com"
+
+      # Client-id scheme must be x509_san_dns so the wallet validates the RP access cert.
+      VERIFIER_CLIENTIDPREFIX: "x509_san_dns"
+      VERIFIER_ORIGINALCLIENTID: "eudi-backend-de.mitterbucher.com"  # ◀── must match a SAN in the RP cert
+
+      # RP access certificate keystore from the SPRIND registrar (NOT self-signed).
+      VERIFIER_ACCESS_CERTIFICATE_KEYSTORE: "file:///certs/keystore.p12"
+      VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE: "pkcs12"
+      VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD: "${DE_KEYSTORE_PASSWORD}"  # ◀── FILL via env / .env file
+      VERIFIER_ACCESS_CERTIFICATE_ALIAS: "verifier"                             # ◀── alias inside the .p12
+      VERIFIER_ACCESS_CERTIFICATE_PASSWORD: "${DE_KEYSTORE_PASSWORD}"           # ◀── key password
+      VERIFIER_ACCESS_CERTIFICATE_SIGNING_ALGORITHM: "ES256"                    # match the RP key curve (P-256)
+
+      VERIFIER_RESPONSE_MODE: "DirectPost"
+      VERIFIER_REQUESTJWT_EMBED: "ByReference"
+      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Post"
+
+      # Accept the German PID: mdoc doctype + SD-JWT VC vct (Bundesdruckerei prototype).
+      VERIFIER_ATTESTATIONCLASSIFICATIONS: >-
+        {"pid":{"vcts":["urn:eudi:pid:1","https://demo.pid-issuer.bundesdruckerei.de/credentials/pid/1.0"],
+                "docTypes":["eu.europa.ec.eudi.pid.1"]},
+         "qeaa":{"vcts":[],"docTypes":[]},
+         "pubeaa":{"vcts":[],"docTypes":[]},
+         "eaa":[{"useCase":"mDL","vcts":[],"docTypes":["org.iso.18013.5.1.mDL"]}]}
+
+      CORS_ORIGINS: "*"
+      CORS_METHODS: "*"
+      CORS_HEADERS: "*"
+      # NOTE: whether to keep the permissive self-signed profile or configure a real Trust
+      # Validator Service (to validate the German PID issuer) depends on SPRIND guidance.
+      SPRING_PROFILES_ACTIVE: "self-signed"
+    volumes:
+      - ./certs-de/keystore.p12:/certs/keystore.p12:ro
+    networks:
+      mipdfsign_default:
+        aliases: [eudi-verifier-backend-de]
+
+# Shared reverse-proxy network (the existing Caddy lives here and terminates TLS).
+networks:
+  mipdfsign_default:
+    external: true

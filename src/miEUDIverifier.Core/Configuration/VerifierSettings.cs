@@ -14,6 +14,20 @@ public class VerifierSettings
     /// </summary>
     public string BackendUrl { get; set; } = "https://verifier.eudiw.dev";
 
+    /// <summary>
+    /// Named verifier backends selectable per verification via <c>?backend=&lt;key&gt;</c>.
+    /// Key → base URL. Enables serving multiple trust ecosystems from one app, e.g.
+    /// <c>eu</c> = EUDI reference (eudiw.dev) and <c>de</c> = German EUDI Wallet (own backend
+    /// with a SPRIND-issued RP access certificate). When empty, <see cref="BackendUrl"/> is used
+    /// as the single <c>eu</c> backend. Configure via env, e.g.
+    /// <c>EUDI_VerifierSettings__Backends__eu=…</c> / <c>EUDI_VerifierSettings__Backends__de=…</c>.
+    /// The <c>de</c> entry stays empty until the German backend instance exists.
+    /// </summary>
+    public Dictionary<string, string> Backends { get; set; } = new();
+
+    /// <summary>Key of the backend used when no <c>?backend=</c> is given. Default: <c>eu</c>.</summary>
+    public string DefaultBackend { get; set; } = "eu";
+
     /// <summary>How often (in seconds) to poll for the wallet response.</summary>
     public int PollIntervalSeconds { get; set; } = 3;
 
