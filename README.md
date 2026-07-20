@@ -93,6 +93,13 @@ Afterwards the PID credential is stored in the wallet and can be read by this ve
 > **Note:** This verifier requests the PID in **both** formats — **mso_mdoc** and **SD-JWT VC**
 > (`dc+sd-jwt`) — as alternative options, so the wallet can present whichever it holds. On the test
 > issuer you can therefore load **PID (MSO Mdoc)** or **PID (SD-JWT VC)**; both work.
+>
+> In addition, the **German EUDI Wallet** (EUDIWalletDE, Bundesdruckerei prototype) is supported as
+> a further option: its PID uses a different credential type
+> (`https://demo.pid-issuer.bundesdruckerei.de/credentials/pid/1.0`) and the OIDC-style claim name
+> `birthdate`, which this verifier requests as a separate DCQL alternative
+> (configurable via `GermanPidVctValues`). Note that the wallet must also trust the verifier
+> backend — with the public eudiw.dev demo backend this depends on the wallet's trust settings.
 
 ## Quick start
 

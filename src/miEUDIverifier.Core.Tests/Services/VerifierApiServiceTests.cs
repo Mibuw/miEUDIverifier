@@ -96,6 +96,10 @@ public class VerifierApiServiceTests
         capturedBody.Should().Contain("birth_date",          because: "Geburtsdatum wird angefragt");
         capturedBody.Should().Contain("dc+sd-jwt",           because: "SD-JWT VC wird als zweite Option angefragt");
         capturedBody.Should().Contain("urn:eudi:pid:1",      because: "vct der SD-JWT VC PID");
+        capturedBody.Should().Contain("demo.pid-issuer.bundesdruckerei.de",
+            because: "die deutsche EUDI Wallet (bdr-PID) wird als dritte Option angefragt");
+        capturedBody.Should().Contain("birthdate",
+            because: "die bdr-PID nutzt den OIDC-Claim-Namen 'birthdate'");
     }
 
     [Fact]

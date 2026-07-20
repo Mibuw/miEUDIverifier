@@ -59,6 +59,17 @@ public class VerifierSettings
     };
 
     /// <summary>
+    /// Accepted vct values for the German EUDI Wallet (Bundesdruckerei prototype) PID,
+    /// offered as an additional SD-JWT VC option. The German PID uses the OIDC-style
+    /// claim name "birthdate" instead of "birth_date", so it needs its own DCQL entry.
+    /// Set to an empty list to disable the option.
+    /// </summary>
+    public List<string> GermanPidVctValues { get; set; } = new()
+    {
+        "https://demo.pid-issuer.bundesdruckerei.de/credentials/pid/1.0",
+    };
+
+    /// <summary>
     /// Time-to-live (minutes) for REST-API verification sessions. Abandoned sessions are
     /// evicted after this period. Default: 30 minutes.
     /// </summary>
