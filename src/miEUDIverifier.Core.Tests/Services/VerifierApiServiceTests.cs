@@ -103,6 +103,35 @@ public class VerifierApiServiceTests
     }
 
     [Fact]
+    public async Task InitializeTransactionAsync_MdocOnly_OmitsSdJwt_AndSendsIntendedUseId()
+    {
+        // Arrange
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        });
+
+        // Act: mso_mdoc-only backend (e.g. the German sandbox) with an intended-use id
+        await service.InitializeTransactionAsync(
+            new TransactionOptions { MdocOnly = true, IntendedUseId = "pos-pid-mdoc" });
+
+        // Assert: only the mso_mdoc PID is requested, and the intended_use_id is sent
+        capturedBody.Should().NotBeNull();
+        capturedBody.Should().Contain("mso_mdoc");
+        capturedBody.Should().Contain("intended_use_id");
+        capturedBody.Should().Contain("pos-pid-mdoc");
+        capturedBody.Should().NotContain("dc+sd-jwt",
+            because: "an mso_mdoc-only request must not offer SD-JWT alternatives");
+        capturedBody.Should().NotContain("bundesdruckerei",
+            because: "the German SD-JWT PID must not be offered when scoped to mso_mdoc");
+    }
+
+    [Fact]
     public async Task InitializeTransactionAsync_Throws_WhenBackendReturnsBadRequest()
     {
         // Arrange

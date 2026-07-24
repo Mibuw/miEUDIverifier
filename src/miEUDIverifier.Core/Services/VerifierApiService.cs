@@ -38,8 +38,10 @@ public class VerifierApiService
     // ── Step 1: Initialize Transaction ───────────────────────────────────────
 
     public async Task<InitTransactionResponse> InitializeTransactionAsync(
+        TransactionOptions? options = null,
         CancellationToken ct = default)
     {
+        options ??= new TransactionOptions();
         var credentialId = Guid.NewGuid().ToString();
 
         // mso_mdoc: claim paths are ["namespace", "element_identifier"]
@@ -50,14 +52,7 @@ public class VerifierApiService
             new DcqlClaim { Path = new List<string> { PidNamespace, "birth_date" } },
         };
 
-        // SD-JWT VC: claim paths are flat ["claim_name"]
-        var sdJwtClaims = new List<DcqlClaim>
-        {
-            new DcqlClaim { Path = new List<string> { "family_name" } },
-            new DcqlClaim { Path = new List<string> { "given_name" } },
-            new DcqlClaim { Path = new List<string> { "birth_date" } },
-        };
-
+        // Always request the mso_mdoc PID.
         var credentials = new List<DcqlCredential>
         {
             new DcqlCredential
@@ -67,47 +62,57 @@ public class VerifierApiService
                 Meta   = new DcqlCredentialMeta { DoctypeValue = PidNamespace },
                 Claims = mdocClaims,
             },
-            new DcqlCredential
+        };
+        var credentialSetOptions = new List<List<string>>
+        {
+            new List<string> { credentialId + "-mdoc" },
+        };
+
+        // The SD-JWT VC alternatives are only added for "full" backends. They are omitted when
+        // MdocOnly is set (e.g. the German sandbox, whose Registration Certificate is scoped to
+        // mso_mdoc — requesting more than registered would make the wallet abort).
+        if (!options.MdocOnly)
+        {
+            // SD-JWT VC: claim paths are flat ["claim_name"]
+            credentials.Add(new DcqlCredential
             {
                 Id     = credentialId + "-sdjwt",
                 Format = _settings.SdJwtFormat,
                 Meta   = new DcqlCredentialMeta { VctValues = _settings.SdJwtVctValues },
-                Claims = sdJwtClaims,
-            },
-        };
-
-        // Alternative options → the wallet may satisfy the request with ANY of these,
-        // whichever PID it holds.
-        var options = new List<List<string>>
-        {
-            new List<string> { credentialId + "-mdoc" },
-            new List<string> { credentialId + "-sdjwt" },
-        };
-
-        // German EUDI Wallet (Bundesdruckerei prototype PID): own vct and the OIDC-style
-        // claim name "birthdate" instead of "birth_date" → needs a separate DCQL entry.
-        if (_settings.GermanPidVctValues is { Count: > 0 })
-        {
-            credentials.Add(new DcqlCredential
-            {
-                Id     = credentialId + "-sdjwt-de",
-                Format = _settings.SdJwtFormat,
-                Meta   = new DcqlCredentialMeta { VctValues = _settings.GermanPidVctValues },
                 Claims = new List<DcqlClaim>
                 {
                     new DcqlClaim { Path = new List<string> { "family_name" } },
                     new DcqlClaim { Path = new List<string> { "given_name" } },
-                    new DcqlClaim { Path = new List<string> { "birthdate" } },
+                    new DcqlClaim { Path = new List<string> { "birth_date" } },
                 },
             });
-            options.Add(new List<string> { credentialId + "-sdjwt-de" });
+            credentialSetOptions.Add(new List<string> { credentialId + "-sdjwt" });
+
+            // German EUDI Wallet (Bundesdruckerei prototype PID): own vct and the OIDC-style
+            // claim name "birthdate" instead of "birth_date" → needs a separate DCQL entry.
+            if (_settings.GermanPidVctValues is { Count: > 0 })
+            {
+                credentials.Add(new DcqlCredential
+                {
+                    Id     = credentialId + "-sdjwt-de",
+                    Format = _settings.SdJwtFormat,
+                    Meta   = new DcqlCredentialMeta { VctValues = _settings.GermanPidVctValues },
+                    Claims = new List<DcqlClaim>
+                    {
+                        new DcqlClaim { Path = new List<string> { "family_name" } },
+                        new DcqlClaim { Path = new List<string> { "given_name" } },
+                        new DcqlClaim { Path = new List<string> { "birthdate" } },
+                    },
+                });
+                credentialSetOptions.Add(new List<string> { credentialId + "-sdjwt-de" });
+            }
         }
 
         var credentialSets = new List<DcqlCredentialSet>
         {
             new DcqlCredentialSet
             {
-                Options = options,
+                Options = credentialSetOptions,
                 Purpose = "Identitaetsnachweis - Name und Geburtsdatum",
             },
         };
@@ -122,6 +127,9 @@ public class VerifierApiService
             IssuerChain = string.IsNullOrWhiteSpace(_settings.IssuerChain)
                 ? null
                 : _settings.IssuerChain,
+            IntendedUseId = string.IsNullOrWhiteSpace(options.IntendedUseId)
+                ? null
+                : options.IntendedUseId,
             Nonce     = Guid.NewGuid().ToString("N"),
             DcqlQuery = new DcqlQuery
             {

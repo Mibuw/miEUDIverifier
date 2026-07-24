@@ -31,6 +31,15 @@ public class InitTransactionRequest
     [JsonPropertyName("issuer_chain")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? IssuerChain { get; set; }
+
+    /// <summary>
+    /// Optional id of a Wallet Relying Party Intended Use configured on the backend
+    /// (VERIFIER_INTENDEDUSES_XX_ID). The backend then embeds the matching Registration
+    /// Certificate in the authorization request so the wallet can enforce data minimization.
+    /// </summary>
+    [JsonPropertyName("intended_use_id")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? IntendedUseId { get; set; }
 }
 
 // ─── DCQL Query ───────────────────────────────────────────────────────────────

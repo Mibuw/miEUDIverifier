@@ -154,9 +154,15 @@ backends via environment (fluent with the `EUDI_` prefix):
 EUDI_VerifierSettings__Backends__eu="https://verifier-backend.eudiw.dev"   # EUDI reference wallet
 EUDI_VerifierSettings__Backends__de="http://eudi-verifier-backend-de:8080" # German EUDI Wallet (own backend)
 EUDI_VerifierSettings__DefaultBackend="eu"
+EUDI_VerifierSettings__MdocOnlyBackends__0="de"        # request only the mso_mdoc PID for "de"
+EUDI_VerifierSettings__IntendedUseIds__de="pos-pid-mdoc" # references the backend's Registration Certificate
 ```
 
 When `Backends` is not set, the single `BackendUrl` is used as the `eu` backend (unchanged default).
+A backend listed in `MdocOnlyBackends` requests **only** the `mso_mdoc` PID (no SD-JWT alternatives)
+— required when its Registration Certificate is scoped to mso_mdoc; the demo page then shows a small
+note so testers use the matching PID. `IntendedUseIds` maps a backend to a Wallet-RP Intended Use id
+sent as `intended_use_id`, so the backend attaches the matching Registration Certificate.
 
 > **Why more than one backend?** The German EUDI Wallet (EUDIWalletDE) only trusts a verifier whose
 > certificate comes from the German Relying-Party Access CA (obtained via the **SPRIND** sandbox),

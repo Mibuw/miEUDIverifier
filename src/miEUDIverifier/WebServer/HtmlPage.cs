@@ -28,9 +28,15 @@ public static class HtmlPage
             newRequest         = t["btnNewRequest"],
         });
 
+        // Small note shown only for the German (mso_mdoc-only) backend, so testers use the right PID.
+        var noteBlock = string.Equals(state.Backend, "de", StringComparison.OrdinalIgnoreCase)
+            ? $"<p class=\"note\">{t["deNote"]}</p>"
+            : "";
+
         return Template
             .Replace("___LANG___",            lang)
             .Replace("___QR_BASE64___",       state.QrBase64)
+            .Replace("___NOTE_BLOCK___",      noteBlock)
             .Replace("___SUBTITLE___",        t["subtitle"])
             .Replace("___WAITING___",         t["waiting"])
             .Replace("___HINT___",            t["hint"])
@@ -88,6 +94,7 @@ public static class HtmlPage
         ["labelBirth"]         = "Geburtsdatum",
         ["btnScanAgain"]       = "Neuen Scan starten",
         ["btnNewRequest"]      = "Neuer Request",
+        ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Es wird ausschließlich die PID im Format mso_mdoc (Familienname, Vorname, Geburtsdatum) angefragt.",
         ["received"]           = "Identität empfangen",
         ["errorPrefix"]        = "Fehler: ",
         ["unknown"]            = "Unbekannt",
@@ -106,6 +113,7 @@ public static class HtmlPage
         ["labelBirth"]         = "Date of birth",
         ["btnScanAgain"]       = "Start new scan",
         ["btnNewRequest"]      = "New request",
+        ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): only the mso_mdoc PID (family name, given name, date of birth) is requested.",
         ["received"]           = "Identity received",
         ["errorPrefix"]        = "Error: ",
         ["unknown"]            = "Unknown",
@@ -172,6 +180,18 @@ public static class HtmlPage
               font-size: 14px;
               color: #6b7280;
               margin-bottom: 28px;
+            }
+
+            .note {
+              font-size: 12.5px;
+              line-height: 1.5;
+              color: #92400e;
+              background: #fffbeb;
+              border: 1px solid #fcd34d;
+              border-radius: 10px;
+              padding: 10px 14px;
+              margin: -12px 0 24px;
+              text-align: left;
             }
 
             /* ── QR code ── */
@@ -345,6 +365,7 @@ public static class HtmlPage
             <div class="brand">European Digital Identity</div>
             <h1>miEUDIverifier</h1>
             <p class="subtitle">___SUBTITLE___</p>
+            ___NOTE_BLOCK___
 
             <!-- QR Code -->
             <div id="qr-section">

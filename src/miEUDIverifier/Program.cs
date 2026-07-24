@@ -64,12 +64,22 @@ var services = backendUrls.Keys.ToDictionary(
 VerifierApiService ServiceFor(string? backend) =>
     backend is not null && services.TryGetValue(backend, out var s) ? s : services[defaultBackend];
 
+// Per-backend transaction options (e.g. the German backend requests mso_mdoc only and
+// references its Registration Certificate via an intended-use id).
+miEUDIverifier.Models.TransactionOptions OptionsFor(string? backend) => new()
+{
+    MdocOnly = backend is not null
+        && settings.MdocOnlyBackends.Contains(backend, StringComparer.OrdinalIgnoreCase),
+    IntendedUseId = backend is not null
+        && settings.IntendedUseIds.TryGetValue(backend, out var id) ? id : null,
+};
+
 // ── Local helper functions ────────────────────────────────────────────────────
 
-// Starts a new transaction (against the given backend) and updates the AppState
+// Starts a new transaction (against the session's backend) and updates the AppState
 async Task StartNewTransaction(AppState state, VerifierApiService verifier, CancellationToken ct)
 {
-    var transaction = await verifier.InitializeTransactionAsync(ct);
+    var transaction = await verifier.InitializeTransactionAsync(OptionsFor(state.Backend), ct);
     var deepLink    = transaction.BuildWalletDeepLink(settings.AuthorizationRequestScheme);
     var qrBytes     = QrCodeService.GeneratePng(deepLink);
 

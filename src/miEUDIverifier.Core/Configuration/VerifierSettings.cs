@@ -28,6 +28,18 @@ public class VerifierSettings
     /// <summary>Key of the backend used when no <c>?backend=</c> is given. Default: <c>eu</c>.</summary>
     public string DefaultBackend { get; set; } = "eu";
 
+    /// <summary>
+    /// Backend keys that request only the <c>mso_mdoc</c> PID (no SD-JWT alternatives), e.g.
+    /// <c>de</c> to stay within a Registration Certificate scoped to mso_mdoc.
+    /// </summary>
+    public List<string> MdocOnlyBackends { get; set; } = new();
+
+    /// <summary>
+    /// Per-backend Wallet Relying Party Intended Use id (key → id). Sent as <c>intended_use_id</c>
+    /// so the backend attaches the matching Registration Certificate to the authorization request.
+    /// </summary>
+    public Dictionary<string, string> IntendedUseIds { get; set; } = new();
+
     /// <summary>How often (in seconds) to poll for the wallet response.</summary>
     public int PollIntervalSeconds { get; set; } = 3;
 
