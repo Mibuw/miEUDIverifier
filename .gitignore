@@ -10,11 +10,17 @@ obj/
 
 # Certificates & key material — never commit to the repo
 Cert/
+cert/
+certs/
+certs-de/
 *.pfx
 *.pem
 *.key
 *.crt
 *.p12
+# Registration / access certificates dropped into the cert folder (any extension)
+registration-certificate*
+certificate-*.crt
 
 # Claude local files
 .claude/
