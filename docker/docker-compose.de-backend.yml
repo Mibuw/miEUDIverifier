@@ -35,9 +35,12 @@ services:
       # Wallet-facing public base URL = the APP domain (matches the Access Cert SAN).
       VERIFIER_PUBLICURL: "https://mieudiverifier.mitterbucher.com"
 
-      # x509_san_dns client id — must equal a SAN in the RP Access Certificate.
-      VERIFIER_CLIENTIDPREFIX: "x509_san_dns"
-      VERIFIER_ORIGINALCLIENTID: "mieudiverifier.mitterbucher.com"
+      # The German EUDI Wallet requires the x509_hash client-id scheme. ORIGINALCLIENTID must be the
+      # base64url SHA-256 of the Access Certificate (DER), NOT the hostname. Compute with:
+      #   openssl x509 -in cert.crt -outform DER | openssl dgst -sha256 -binary \
+      #     | openssl base64 -A | tr '+/' '-_' | tr -d '='
+      VERIFIER_CLIENTIDPREFIX: "x509_hash"
+      VERIFIER_ORIGINALCLIENTID: "<base64url-sha256-of-access-cert>"  # ◀── FILL (see command above)
 
       # RP Access Certificate keystore (our private key + the SPRIND-issued Access Cert).
       VERIFIER_ACCESS_CERTIFICATE_KEYSTORE: "file:///certs/keystore.p12"
