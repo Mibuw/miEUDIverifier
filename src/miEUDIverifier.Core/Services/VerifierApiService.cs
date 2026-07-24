@@ -121,7 +121,9 @@ public class VerifierApiService
         {
             JarMode                    = _settings.JarMode,
             RequestUriMethod           = _settings.RequestUriMethod,
-            ResponseMode               = _settings.ResponseMode,
+            ResponseMode               = string.IsNullOrWhiteSpace(options.ResponseMode)
+                ? _settings.ResponseMode
+                : options.ResponseMode,
             Profile                    = _settings.Profile,
             AuthorizationRequestScheme = _settings.AuthorizationRequestScheme,
             IssuerChain = string.IsNullOrWhiteSpace(_settings.IssuerChain)

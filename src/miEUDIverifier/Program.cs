@@ -72,6 +72,8 @@ miEUDIverifier.Models.TransactionOptions OptionsFor(string? backend) => new()
         && settings.MdocOnlyBackends.Contains(backend, StringComparer.OrdinalIgnoreCase),
     IntendedUseId = backend is not null
         && settings.IntendedUseIds.TryGetValue(backend, out var id) ? id : null,
+    ResponseMode = backend is not null
+        && settings.ResponseModes.TryGetValue(backend, out var rm) ? rm : null,
 };
 
 // ── Local helper functions ────────────────────────────────────────────────────

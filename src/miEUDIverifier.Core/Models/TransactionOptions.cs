@@ -18,4 +18,11 @@ public class TransactionOptions
     /// <c>intended_use_id</c> so the backend attaches the matching Registration Certificate.
     /// </summary>
     public string? IntendedUseId { get; set; }
+
+    /// <summary>
+    /// Optional OpenID4VP <c>response_mode</c> override (<c>direct_post</c> or
+    /// <c>direct_post.jwt</c>). High-assurance wallets (e.g. the German EUDI Wallet) require an
+    /// encrypted response (<c>direct_post.jwt</c>). Falls back to the configured default when null.
+    /// </summary>
+    public string? ResponseMode { get; set; }
 }

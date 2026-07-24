@@ -156,6 +156,7 @@ EUDI_VerifierSettings__Backends__de="http://eudi-verifier-backend-de:8080" # Ger
 EUDI_VerifierSettings__DefaultBackend="eu"
 EUDI_VerifierSettings__MdocOnlyBackends__0="de"        # request only the mso_mdoc PID for "de"
 EUDI_VerifierSettings__IntendedUseIds__de="pos-pid-mdoc" # references the backend's Registration Certificate
+EUDI_VerifierSettings__ResponseModes__de="direct_post.jwt" # encrypted response (required by the German wallet)
 ```
 
 When `Backends` is not set, the single `BackendUrl` is used as the `eu` backend (unchanged default).

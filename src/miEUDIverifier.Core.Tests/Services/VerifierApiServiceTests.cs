@@ -116,15 +116,21 @@ public class VerifierApiServiceTests
                 """);
         });
 
-        // Act: mso_mdoc-only backend (e.g. the German sandbox) with an intended-use id
-        await service.InitializeTransactionAsync(
-            new TransactionOptions { MdocOnly = true, IntendedUseId = "pos-pid-mdoc" });
+        // Act: mso_mdoc-only backend (e.g. the German sandbox) with intended-use id + encrypted response
+        await service.InitializeTransactionAsync(new TransactionOptions
+        {
+            MdocOnly = true,
+            IntendedUseId = "pos-pid-mdoc",
+            ResponseMode = "direct_post.jwt",
+        });
 
-        // Assert: only the mso_mdoc PID is requested, and the intended_use_id is sent
+        // Assert: only the mso_mdoc PID is requested, intended_use_id + encrypted response mode are sent
         capturedBody.Should().NotBeNull();
         capturedBody.Should().Contain("mso_mdoc");
         capturedBody.Should().Contain("intended_use_id");
         capturedBody.Should().Contain("pos-pid-mdoc");
+        capturedBody.Should().Contain("direct_post.jwt",
+            because: "the German wallet requires an encrypted response");
         capturedBody.Should().NotContain("dc+sd-jwt",
             because: "an mso_mdoc-only request must not offer SD-JWT alternatives");
         capturedBody.Should().NotContain("bundesdruckerei",

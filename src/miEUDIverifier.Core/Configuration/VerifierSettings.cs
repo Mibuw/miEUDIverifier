@@ -40,6 +40,13 @@ public class VerifierSettings
     /// </summary>
     public Dictionary<string, string> IntendedUseIds { get; set; } = new();
 
+    /// <summary>
+    /// Per-backend OpenID4VP <c>response_mode</c> override (key → <c>direct_post</c> or
+    /// <c>direct_post.jwt</c>). Use <c>direct_post.jwt</c> for high-assurance wallets that require
+    /// an encrypted response (e.g. the German EUDI Wallet). Defaults to <see cref="ResponseMode"/>.
+    /// </summary>
+    public Dictionary<string, string> ResponseModes { get; set; } = new();
+
     /// <summary>How often (in seconds) to poll for the wallet response.</summary>
     public int PollIntervalSeconds { get; set; } = 3;
 
