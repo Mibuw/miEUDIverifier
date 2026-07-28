@@ -85,6 +85,12 @@ services:
       # Use the local backend inside the compose network (instead of the public server).
       # To use the public backend, comment out this line.
       EUDI_VerifierSettings__BackendUrl: "http://verifier-backend:8080"
+
+      # Encrypted wallet response. Wallets running the HAIP profile REJECT an unencrypted
+      # request with "HAIP profile requires an encrypted response mode (direct_post.jwt or
+      # dc_api.jwt)" before they even show the consent screen. direct_post.jwt works with
+      # both the EUDI reference backend and our own instance, so it is the safer default.
+      EUDI_VerifierSettings__ResponseMode: "direct_post.jwt"
     depends_on:
       verifier-backend:
         condition: service_healthy
