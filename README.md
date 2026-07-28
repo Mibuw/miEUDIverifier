@@ -189,9 +189,13 @@ sent as `intended_use_id`, so the backend attaches the matching Registration Cer
 > **Why more than one backend?** The German EUDI Wallet (EUDIWalletDE) only trusts a verifier whose
 > certificate comes from the German Relying-Party Access CA (obtained via the **SPRIND** sandbox),
 > while the EUDI reference wallet trusts the eudiw.dev reference CA. One instance = one signing
-> certificate = one ecosystem. A ready-to-fill template for the German backend instance is in
+> certificate = one ecosystem. The template for the German backend instance is in
 > [`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml) — drop in the
-> SPRIND-issued `.p12` and set `Backends__de`. Until then, only `eu` is active.
+> SPRIND-issued `.p12` and set `Backends__de`. Without that entry the app serves `eu` only and hides
+> the switcher.
+>
+> **Status:** since **28 July 2026** the public demo completes a presentation with **both** wallets —
+> the EUDI reference wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`.
 >
 > Full background — trust model, why each wallet does or doesn't work, the SPRIND onboarding path
 > and the multi-backend design — is documented in
