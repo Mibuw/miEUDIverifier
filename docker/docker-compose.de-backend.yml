@@ -40,7 +40,8 @@ services:
       #   openssl x509 -in cert.crt -outform DER | openssl dgst -sha256 -binary \
       #     | openssl base64 -A | tr '+/' '-_' | tr -d '='
       VERIFIER_CLIENTIDPREFIX: "x509_hash"
-      VERIFIER_ORIGINALCLIENTID: "<base64url-sha256-of-access-cert>"  # ◀── FILL (see command above)
+      # Hash of the Access Certificate issued 2026-07-28 (serial c47fa906…bd93). Recompute on renewal.
+      VERIFIER_ORIGINALCLIENTID: "t96yaT8i5o1oL9OXznzyzjETzSjDyhKuUHft7RVkik4"
 
       # RP Access Certificate keystore (our private key + the SPRIND-issued Access Cert).
       VERIFIER_ACCESS_CERTIFICATE_KEYSTORE: "file:///certs/keystore.p12"
