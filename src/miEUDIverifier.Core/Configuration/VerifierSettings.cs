@@ -21,7 +21,8 @@ public class VerifierSettings
     /// with a SPRIND-issued RP access certificate). When empty, <see cref="BackendUrl"/> is used
     /// as the single <c>eu</c> backend. Configure via env, e.g.
     /// <c>EUDI_VerifierSettings__Backends__eu=…</c> / <c>EUDI_VerifierSettings__Backends__de=…</c>.
-    /// The <c>de</c> entry stays empty until the German backend instance exists.
+    /// Leave the <c>de</c> entry unset if no German backend instance is deployed — the app then
+    /// serves <c>eu</c> only and the demo page hides the ecosystem switcher.
     /// </summary>
     public Dictionary<string, string> Backends { get; set; } = new();
 

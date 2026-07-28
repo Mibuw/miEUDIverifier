@@ -12,6 +12,122 @@ multiple trust ecosystems. It is the reference for the design decisions behind
 > SPRIND sandbox). Therefore multiple wallets require multiple backend instances — which the app
 > now supports through named backends.
 
+## 0. Status — both ecosystems verified working (2026-07-28)
+
+Since **28 July 2026** the public demo completes a presentation with **both** wallets: the EUDI
+reference wallet against the `eu` backend, and the German EUDI Wallet (SPRIND sandbox) against our
+own `de` backend. Getting there took three fixes that are worth recording, because none of them is
+obvious from the error message the wallet shows.
+
+**1. The registrar's AIA endpoint was broken (SPRIND-side).** Our access certificate pointed its
+`authorityInfoAccess` CA-Issuers URL at `…/api/status-management/ca.der`, which returned **404**. The
+wallet could fetch the CRL (that URL worked) but never the issuing CA, so it could not build the
+chain and aborted with `Could not trust certificate chain`. SPRIND separated the endpoints on
+27 July 2026: the CA now lives at `https://sandbox.eudi-wallet.org/api/ca.der`, the CRL stays at
+`…/api/status-management/crl`. **AIA and CRL distribution points are signed extensions**, so an
+already-issued certificate cannot be repaired — the certificate had to be reissued. The registrar
+CA also changed its subject DN from `C=DE, O=German Registrar, CN=German Registrar` to
+`C=DE, CN=German Registrar` while keeping the same key pair, which alone breaks strict RFC 5280 path
+building (`openssl verify` → error 20) even though the signature still matches.
+
+**2. Do not trust the Subject Key Identifier to tell certificates apart.** The SKI is derived from
+the public key. We reused our existing key for the reissued certificate, so old and new certificate
+carry an **identical** SKI — the wallet even logs `Subject Key Identifier equal to public key SHA1`.
+Compare the **serial number** or the base64url SHA-256 of the DER instead. Related trap: with the
+`x509_hash` client-id prefix the `client_id` *is* that hash, so a reissued certificate always needs
+`VERIFIER_ORIGINALCLIENTID` updated too. A new keystore with a stale hash fails with the same
+`Could not trust certificate chain` message as a genuinely untrusted chain.
+
+**3. HAIP wallets require an encrypted response.** A wallet running the HAIP profile rejects an
+unencrypted `direct_post` request with *"HAIP profile requires an encrypted response mode
+(direct_post.jwt or dc_api.jwt)"*. That check runs **inside the wallet, before the consent screen**,
+so nothing appears in the verifier logs. Both backends now use `direct_post.jwt`
+(`VerifierSettings.ResponseModes`); the backend then advertises an ephemeral ECDH-ES P-256 key in
+`client_metadata` and decrypts the JWE response.
+
+**Verifying a deployment actually landed.** Reading the wallet log is not enough — check what is
+served. Start a transaction, fetch the request object, and confirm that
+`SHA-256(x5c leaf) == client_id` suffix:
+
+```bash
+BASE=https://your-verifier.example
+RU=$(curl -s -X POST "$BASE/api/verification?backend=de" \
+     | python -c "import sys,json,urllib.parse as u; d=json.load(sys.stdin); \
+       print(u.parse_qs(u.urlparse(d['deepLink']).query)['request_uri'][0])")
+curl -s -X POST "$RU" -H "Content-Type: application/x-www-form-urlencoded"
+```
+
+A separate, unrelated failure mode seen the same day: the EUDI reference backend rejected a
+presentation with `X5CNotTrusted (Issuer X5C not trusted)`. That was **not** a verifier problem — the
+PID in the wallet had been signed by a Document Signer certificate that had expired meanwhile
+(`PID DS - 01`, valid until 4 July 2026), while the credential's own MSO still looked valid. The fix
+is to re-issue the PID in the wallet.
+
+### Worked example — the certificate behind the public demo
+
+This is the real RP Access Certificate of the public test instance, so the values above can be
+reproduced with nothing but `openssl`. It is a **sandbox** certificate and public by nature: the
+verifier sends it to every wallet in the request object's `x5c` header. The matching
+`private_key.pem`, `keystore.p12` and `keystore.pass` are **not** in this repository and must never
+be — with the private key anyone could impersonate this verifier. `cert/` is gitignored.
+
+```
+-----BEGIN CERTIFICATE-----
+MIIDJTCCAsugAwIBAgIRAMR/qQaWM1BCMh/ooj8zvZMwCgYIKoZIzj0EAwIwKDEL
+MAkGA1UEBhMCREUxGTAXBgNVBAMMEEdlcm1hbiBSZWdpc3RyYXIwHhcNMjYwNzI4
+MTY0MjUyWhcNMjcwNzI4MTY0MjUyWjBQMQswCQYDVQQGEwJERTEMMAoGA1UECgwD
+UE9TMSUwIwYDVQRhDBxOVFJERS1FVUlERS0zM0VBQ0QzODVERDYyNzQxMQwwCgYD
+VQQDDANQT1MwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQjvGL3icQnbrrZUAFF
+316jCEbfJqOaK7KZOHM6W62OctgUGWaY3UybSR12aODzI9T5jHFqOGiBjJduTzRb
+oJ68o4IBrDCCAagwDAYDVR0TAQH/BAIwADAdBgNVHQ4EFgQU27c/NKN5nGgD4ICg
+37p7JDDZRk0wHwYDVR0jBBgwFoAUqcKj2i9trFTuzrlO6CzJLACDgDMwDgYDVR0P
+AQH/BAQDAgeAMBIGA1UdJQQLMAkGByiBjF0FAQYwUwYDVR0RBEwwSoYnaHR0cHM6
+Ly9taWV1ZGl2ZXJpZmllci5taXR0ZXJidWNoZXIuY29tgh9taWV1ZGl2ZXJpZmll
+ci5taXR0ZXJidWNoZXIuY29tMEsGA1UdIAREMEIwQAYHBACL7EYBAjA1MDMGCCsG
+AQUFBwIBFidodHRwczovL3NhbmRib3guZXVkaS13YWxsZXQub3JnL2FwaS9jcHMw
+RgYIKwYBBQUHAQEEOjA4MDYGCCsGAQUFBzAChipodHRwczovL3NhbmRib3guZXVk
+aS13YWxsZXQub3JnL2FwaS9jYS5kZXIwSgYDVR0fBEMwQTA/oD2gO4Y5aHR0cHM6
+Ly9zYW5kYm94LmV1ZGktd2FsbGV0Lm9yZy9hcGkvc3RhdHVzLW1hbmFnZW1lbnQv
+Y3JsMAoGCCqGSM49BAMCA0gAMEUCID9WMeVIVwCToq4Wh3PLb4a33vmQPfXn76+N
+AUEYGStoAiEA7JYFAOxqjqFfNlyAjmJDWM20+2u5LTkiNLgVcry9kQg=
+-----END CERTIFICATE-----
+```
+
+| Property | Value |
+|----------|-------|
+| Subject | `C=DE, O=POS, organizationIdentifier=NTRDE-EUIDE-33EACD385DD62741, CN=POS` |
+| Issuer | `C=DE, CN=German Registrar` |
+| Serial | `C47FA90696335042321FE8A23F33BD93` |
+| Validity | 2026-07-28 → 2027-07-28 |
+| Key | EC P-256, signed with `ecdsa-with-SHA256` |
+| Extended Key Usage | `1.0.18013.5.1.6` (ISO 18013-5 mdlReaderAuth) |
+| SAN | `URI:https://mieudiverifier.mitterbucher.com`, `DNS:mieudiverifier.mitterbucher.com` |
+| AIA CA-Issuers | `https://sandbox.eudi-wallet.org/api/ca.der` |
+| CRL | `https://sandbox.eudi-wallet.org/api/status-management/crl` |
+
+Checks worth running after any reissue:
+
+```bash
+# Extensions, issuer DN, validity
+openssl x509 -in access.crt -noout -subject -issuer -dates \
+        -ext authorityInfoAccess,crlDistributionPoints,subjectAltName,extendedKeyUsage
+
+# Chain against the CA the AIA URL actually serves
+curl -s https://sandbox.eudi-wallet.org/api/ca.der | openssl x509 -inform der -out ca.pem
+openssl verify -CAfile ca.pem -partial_chain access.crt
+
+# Not revoked?
+curl -s https://sandbox.eudi-wallet.org/api/status-management/crl \
+  | openssl crl -inform der -noout -text | grep "$(openssl x509 -in access.crt -noout -serial | cut -d= -f2)"
+
+# The client_id for VERIFIER_ORIGINALCLIENTID (x509_hash prefix)
+openssl x509 -in access.crt -outform DER | openssl dgst -sha256 -binary \
+  | openssl base64 -A | tr '+/' '-_' | tr -d '='
+```
+
+For this certificate the last command yields `t96yaT8i5o1oL9OXznzyzjETzSjDyhKuUHft7RVkik4`, which is
+exactly what the wallet compares against the `client_id` it received.
+
 ## 1. How verifier trust works in OpenID4VP
 
 1. The app asks a **verifier backend** to start a presentation (`POST /ui/presentations` with a
@@ -153,10 +269,14 @@ not yet apply.
 - The app image (`ghcr.io/mibuw/mieudiverifier:latest`) publishes no host ports; a **reverse proxy**
   (Caddy) terminates TLS and forwards to the container on port 5050. The public demo runs at
   `https://mieudiverifier.mitterbucher.com`.
-- The German backend instance is a **separate** container. A ready-to-fill template is in
-  [`docker/docker-compose.de-backend.yml`](../docker/docker-compose.de-backend.yml): drop in the
-  SPRIND-issued `.p12`, add a reverse-proxy route for its public host, and set
-  `EUDI_VerifierSettings__Backends__de` on the app. Until then only `eu` is active.
+- The German backend instance is a **separate** container, running from
+  [`docker/docker-compose.de-backend.yml`](../docker/docker-compose.de-backend.yml): the
+  SPRIND-issued `.p12` is mounted as its keystore, a reverse-proxy route points its public host at
+  it, and `EUDI_VerifierSettings__Backends__de` on the app selects it. Without that entry the app
+  simply serves `eu` only, and the demo page hides the ecosystem switcher.
+- **Single domain:** the access certificate's SAN is the app's own host, so the wallet-facing
+  endpoints must live under it. Caddy routes `/wallet/*` on `mieudiverifier.mitterbucher.com` to the
+  German backend and everything else to the app.
 
 ## Sources
 
