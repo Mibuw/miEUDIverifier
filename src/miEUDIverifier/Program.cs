@@ -38,6 +38,12 @@ var defaultBackend = backendUrls.ContainsKey(settings.DefaultBackend)
     ? settings.DefaultBackend
     : backendUrls.Keys.First();
 
+// Stable order for the demo page's ecosystem switcher: default first, then the rest A-Z.
+var uiBackends = backendUrls.Keys
+    .OrderByDescending(k => string.Equals(k, defaultBackend, StringComparison.OrdinalIgnoreCase))
+    .ThenBy(k => k, StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
 foreach (var (key, url) in backendUrls)
 {
     var baseUri = new Uri(url + "/");
@@ -180,8 +186,22 @@ async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
 app.MapGet("/", async (HttpContext ctx) =>
 {
     var state = await GetOrCreateBrowserSessionAsync(ctx);
+
+    // ?backend=eu|de also re-targets an EXISTING session, not just a fresh one — otherwise the
+    // ecosystem switcher would be a no-op for anyone who already has a session cookie. A switch
+    // needs a new transaction, because the QR code is bound to one backend (and one access cert).
+    var requested = ctx.Request.Query["backend"].FirstOrDefault();
+    if (requested is not null
+        && services.TryGetValue(requested, out var target)
+        && !string.Equals(requested, state.Backend, StringComparison.OrdinalIgnoreCase))
+    {
+        state.Backend = requested;
+        await StartNewTransaction(state, target, app.Lifetime.ApplicationStopping);
+        StartPolling(state, target, app.Lifetime.ApplicationStopping);
+    }
+
     return Results.Content(
-        HtmlPage.Render(state, ctx.Request.Headers.AcceptLanguage.ToString()),
+        HtmlPage.Render(state, uiBackends, ctx.Request.Headers.AcceptLanguage.ToString()),
         "text/html; charset=utf-8");
 });
 

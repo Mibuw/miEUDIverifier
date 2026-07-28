@@ -49,6 +49,17 @@ data – no manual reload needed.
 A public test instance is available at **https://miEUDIverifier.mitterbucher.com** —
 just open it and click **New request** to get a fresh QR code, then scan it with your EUDI Wallet App.
 
+The instance serves **two trust ecosystems**; pick the one matching your wallet with the switcher
+above the QR code, or go straight to it:
+
+| Wallet | Link |
+|--------|------|
+| EUDI reference wallet | [`/?backend=eu`](https://mieudiverifier.mitterbucher.com/?backend=eu) |
+| German EUDI Wallet (SPRIND sandbox) | [`/?backend=de`](https://mieudiverifier.mitterbucher.com/?backend=de) |
+
+Each ecosystem has its own QR code — see
+[Multiple trust ecosystems](#multiple-trust-ecosystems-backend) for why they cannot be merged.
+
 > _No guarantee of availability_ — this endpoint may be offline at any time. To run your own
 > instance, see the [Quick start](#quick-start) below.
 
@@ -145,7 +156,17 @@ several from one deployment via **named backends**:
 | `GET /api/backends` | Lists the configured backend keys and the default. |
 | `POST /api/verification?backend=<key>` | Starts the verification against that backend. Unknown/unconfigured key → `400`. |
 | `POST /api/reset?backend=<key>` | Re-targets the current demo session to another backend. |
-| `GET /?backend=<key>` | Demo page uses that backend for the new browser session. |
+| `GET /?backend=<key>` | Demo page switches to that backend — also for an existing browser session. |
+
+When more than one backend is configured, the demo page shows a **switcher** above the QR code with
+one button per ecosystem, so testers do not have to type the query parameter. Switching starts a
+fresh transaction and therefore a **new QR code**: a QR code is bound to one backend, because the
+request object behind it is signed by that backend's access certificate and carries its `client_id`.
+Scanning a QR code with the wrong wallet always fails — the German wallet only trusts the German
+Registrar CA, the EUDI reference wallet only the eudiw.dev CA. There is no combined QR code for both.
+
+With a single configured backend no switcher is rendered, so single-ecosystem deployments look
+exactly as before.
 
 The chosen backend is echoed back as `backend` in the status/data responses. Configure the
 backends via environment (fluent with the `EUDI_` prefix):
@@ -202,19 +223,49 @@ curl -s -X DELETE $BASE/api/verification/$ID
 
 ## Configuration
 
-All settings live in `src/miEUDIverifier/appsettings.json`:
+All settings live under `VerifierSettings` in `src/miEUDIverifier/appsettings.json`. Nothing below
+is hardcoded — every key can be overridden without touching the code, so the app can be pointed at
+your own backend and your own trust ecosystem.
+
+**Backend & ecosystems**
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `BackendUrl` | `https://verifier.eudiw.dev` | URL of the verifier backend |
-| `PollIntervalSeconds` | `3` | Polling interval (seconds) |
-| `PollTimeoutSeconds` | `120` | Maximum wait time |
-| `Profile` | `openid4vp` | OpenID4VP profile (`openid4vp` or `haip`) |
-| `AuthorizationRequestScheme` | `openid4vp` | URI scheme for the QR code |
-| `IssuerChain` | EUDI demo CA | PEM certificate of the trusted PID issuer |
-| `SessionTtlMinutes` | `30` | Time-to-live for REST-API verification sessions |
+| `BackendUrl` | `https://verifier.eudiw.dev` | URL of the verifier backend (used when `Backends` is empty) |
+| `Backends` | *(empty)* | Named backends, key → base URL. Enables `?backend=<key>` and the UI switcher |
+| `DefaultBackend` | `eu` | Backend used when no `?backend=` is given |
+| `MdocOnlyBackends` | *(empty)* | Backend keys that request only the `mso_mdoc` PID (no SD-JWT alternatives) |
+| `IntendedUseIds` | *(empty)* | Backend key → `intended_use_id` (selects the backend's Registration Certificate) |
+| `ResponseModes` | *(empty)* | Backend key → `direct_post` or `direct_post.jwt` (per-ecosystem override) |
 
-Override via environment variable (prefix `EUDI_`):
+**Protocol**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `Profile` | `openid4vp` | OpenID4VP profile (`openid4vp` or `haip`) |
+| `JarMode` | `by_reference` | How the request JWT is passed (`by_reference` / `by_value`) |
+| `RequestUriMethod` | `post` | HTTP method for `request_uri` (`post` / `get`) |
+| `ResponseMode` | `direct_post` | Default wallet response mode (`direct_post` / `direct_post.jwt`) |
+| `AuthorizationRequestScheme` | `openid4vp` | URI scheme for the QR deep link (e.g. `eudi-openid4vp`, `haip-vp`) |
+
+**Credentials accepted**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `SdJwtFormat` | `dc+sd-jwt` | DCQL format id for SD-JWT VC (older stacks used `vc+sd-jwt`) |
+| `SdJwtVctValues` | ARF + spec example | Accepted `vct` values for the SD-JWT VC PID |
+| `GermanPidVctValues` | Bundesdruckerei prototype | Accepted `vct` values for the German PID; empty list disables that DCQL option |
+| `IssuerChain` | EUDI demo CA | PEM certificate chain of the trusted PID issuer |
+
+**Runtime**
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PollIntervalSeconds` | `3` | Polling interval (seconds) |
+| `PollTimeoutSeconds` | `120` | Maximum wait time for the wallet response |
+| `SessionTtlMinutes` | `30` | Time-to-live for verification sessions (REST API and browser) |
+
+Override via environment variable (prefix `EUDI_`, `__` separates the levels):
 ```bash
 EUDI_VerifierSettings__BackendUrl=http://localhost:8080 dotnet run --project src/miEUDIverifier
 ```
@@ -223,6 +274,33 @@ Or via CLI argument:
 ```bash
 dotnet run --project src/miEUDIverifier -- --VerifierSettings:BackendUrl=http://localhost:8080
 ```
+
+### What lives in the backend, not here
+
+This app is the **frontend and orchestration layer**. The verifier's cryptographic identity belongs
+to the verifier backend (the EUDI reference `eudi-srv-verifier-endpoint` container), because that is
+what signs the request objects. Configure it there via `VERIFIER_*` environment variables — a
+fully commented template is in
+[`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml):
+
+| Backend setting | Purpose |
+|-----------------|---------|
+| `VERIFIER_PUBLICURL` | Wallet-facing base URL; must match the access certificate's SAN |
+| `VERIFIER_ACCESS_CERTIFICATE_KEYSTORE` *(+ `_TYPE`, `_PASSWORD`, `_ALIAS`, `_SIGNING_ALGORITHM`)* | The PKCS#12 with your private key and RP access certificate |
+| `VERIFIER_CLIENTIDPREFIX` / `VERIFIER_ORIGINALCLIENTID` | Client-id scheme (`x509_san_dns`, `x509_hash`, …) and its value |
+| `VERIFIER_INTENDEDUSES_<n>_ID` / `_REGISTRATIONCERTIFICATE` | Registration Certificates, referenced from `IntendedUseIds` above |
+| `VERIFIER_ATTESTATIONCLASSIFICATIONS` | Which attestation types the backend accepts |
+
+Certificates are therefore fully parameterised — they are simply mounted into the backend rather
+than configured in this app. To reuse this project in another ecosystem you need your own access
+certificate from that ecosystem's registrar; nothing in the code is bound to a specific issuer.
+
+**The one deliberate limit:** the requested credential is the **PID** with the claims
+`family_name`, `given_name` and `birth_date`, and the mdoc namespace `eu.europa.ec.eudi.pid.1` is a
+constant in `VerifierApiService`. Which *formats* and *vct* values are accepted is configurable (see
+above), but requesting a different credential type or other claims means editing the DCQL query in
+[`src/miEUDIverifier.Core/Services/VerifierApiService.cs`](src/miEUDIverifier.Core/Services/VerifierApiService.cs).
+This is a PID verifier by design; making the whole DCQL query configurable would be a welcome PR.
 
 ## Hostname, IP address & HTTPS/SSL
 

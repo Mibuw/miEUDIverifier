@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 
 namespace miEUDIverifier.WebServer;
@@ -11,7 +12,11 @@ namespace miEUDIverifier.WebServer;
 /// </summary>
 public static class HtmlPage
 {
-    public static string Render(AppState state, string? acceptLanguage)
+    /// <param name="backends">
+    /// Configured backend keys (trust ecosystems) in display order. Rendered as a switcher when
+    /// more than one is configured; pass an empty list to hide it.
+    /// </param>
+    public static string Render(AppState state, IReadOnlyList<string> backends, string? acceptLanguage)
     {
         var lang = PickLanguage(acceptLanguage);
         var t    = lang == "de" ? De : En;
@@ -36,6 +41,7 @@ public static class HtmlPage
         return Template
             .Replace("___LANG___",            lang)
             .Replace("___QR_BASE64___",       state.QrBase64)
+            .Replace("___BACKEND_SWITCHER___", RenderBackendSwitcher(backends, state.Backend, t))
             .Replace("___NOTE_BLOCK___",      noteBlock)
             .Replace("___SUBTITLE___",        t["subtitle"])
             .Replace("___WAITING___",         t["waiting"])
@@ -47,6 +53,34 @@ public static class HtmlPage
             .Replace("___BTN_SCAN_AGAIN___",  t["btnScanAgain"])
             .Replace("___BTN_NEW_REQUEST___", t["btnNewRequest"])
             .Replace("___T_JSON___",          js);
+    }
+
+    /// <summary>
+    /// Renders the trust-ecosystem switcher: one link per configured backend, pointing at
+    /// <c>/?backend=&lt;key&gt;</c>. Returns an empty string for a single backend, so a
+    /// single-ecosystem deployment shows no switcher at all.
+    /// </summary>
+    private static string RenderBackendSwitcher(
+        IReadOnlyList<string> backends, string? current, IReadOnlyDictionary<string, string> t)
+    {
+        if (backends.Count < 2) return "";
+
+        var links = backends.Select(key =>
+        {
+            var active = string.Equals(key, current, StringComparison.OrdinalIgnoreCase);
+            // Known ecosystems get a friendly, translated name; anything else falls back to the key.
+            var label  = t.TryGetValue("backend_" + key.ToLowerInvariant(), out var known)
+                ? known
+                : key.ToUpperInvariant();
+
+            return $"<a href=\"/?backend={Uri.EscapeDataString(key)}\""
+                 + (active ? " class=\"active\" aria-current=\"true\"" : "")
+                 + $">{WebUtility.HtmlEncode(label)}</a>";
+        });
+
+        return $"<nav class=\"backends\" aria-label=\"{WebUtility.HtmlEncode(t["backendNav"])}\">"
+             + string.Join("", links)
+             + "</nav>";
     }
 
     /// <summary>
@@ -95,6 +129,9 @@ public static class HtmlPage
         ["btnScanAgain"]       = "Neuen Scan starten",
         ["btnNewRequest"]      = "Neuer Request",
         ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Es wird ausschließlich die PID im Format mso_mdoc (Familienname, Vorname, Geburtsdatum) angefragt.",
+        ["backendNav"]         = "Trust-Ökosystem wählen",
+        ["backend_eu"]         = "EU-Referenzwallet",
+        ["backend_de"]         = "Deutsche Wallet",
         ["received"]           = "Identität empfangen",
         ["errorPrefix"]        = "Fehler: ",
         ["unknown"]            = "Unbekannt",
@@ -114,6 +151,9 @@ public static class HtmlPage
         ["btnScanAgain"]       = "Start new scan",
         ["btnNewRequest"]      = "New request",
         ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): only the mso_mdoc PID (family name, given name, date of birth) is requested.",
+        ["backendNav"]         = "Choose trust ecosystem",
+        ["backend_eu"]         = "EU reference wallet",
+        ["backend_de"]         = "German wallet",
         ["received"]           = "Identity received",
         ["errorPrefix"]        = "Error: ",
         ["unknown"]            = "Unknown",
@@ -180,6 +220,39 @@ public static class HtmlPage
               font-size: 14px;
               color: #6b7280;
               margin-bottom: 28px;
+            }
+
+            /* ── Trust-ecosystem switcher (only rendered for >1 backend) ── */
+            .backends {
+              display: inline-flex;
+              gap: 4px;
+              background: #eef2ff;
+              border: 1px solid #dde5ff;
+              border-radius: 999px;
+              padding: 4px;
+              margin-bottom: 22px;
+              max-width: 100%;
+              flex-wrap: wrap;
+              justify-content: center;
+            }
+
+            .backends a {
+              padding: 7px 16px;
+              border-radius: 999px;
+              font-size: 13px;
+              font-weight: 600;
+              color: #3b4a7a;
+              text-decoration: none;
+              white-space: nowrap;
+              transition: background 0.2s, color 0.2s;
+            }
+
+            .backends a:hover:not(.active) { background: #dfe6ff; }
+
+            .backends a.active {
+              background: #003399;
+              color: #fff;
+              box-shadow: 0 1px 3px rgba(0, 51, 153, 0.3);
             }
 
             .note {
@@ -365,6 +438,7 @@ public static class HtmlPage
             <div class="brand">European Digital Identity</div>
             <h1>miEUDIverifier</h1>
             <p class="subtitle">___SUBTITLE___</p>
+            ___BACKEND_SWITCHER___
             ___NOTE_BLOCK___
 
             <!-- QR Code -->
