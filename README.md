@@ -248,6 +248,14 @@ your own backend and your own trust ecosystem.
 | `ResponseMode` | `direct_post` | Default wallet response mode (`direct_post` / `direct_post.jwt`) |
 | `AuthorizationRequestScheme` | `openid4vp` | URI scheme for the QR deep link (e.g. `eudi-openid4vp`, `haip-vp`) |
 
+> **Wallet aborts with “HAIP profile requires an encrypted response mode (direct_post.jwt or
+> dc_api.jwt)”?** That check runs inside the wallet, before the consent screen, so nothing reaches
+> your logs. A wallet enforcing the HAIP profile refuses an unencrypted `direct_post`. Set
+> `ResponseMode` (or the per-backend `ResponseModes__<key>`) to `direct_post.jwt` — the backend then
+> advertises an ephemeral ECDH-ES P-256 key in `client_metadata` and decrypts the JWE response. Both
+> the EUDI reference backend and a self-hosted instance support it, so `direct_post.jwt` is the safer
+> choice for any wallet whose profile you do not control.
+
 **Credentials accepted**
 
 | Key | Default | Description |
