@@ -1,11 +1,37 @@
 # miEUDIverifier
 
-[![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Docker on GHCR](https://img.shields.io/badge/GHCR-mibuw%2Fmieudiverifier-2496ED?logo=docker&logoColor=white)](https://github.com/Mibuw/miEUDIverifier/pkgs/container/mieudiverifier)
+[![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Docker on GHCR](https://img.shields.io/badge/GHCR-mibuw%2Fmieudiverifier-2496ED?logo=docker&logoColor=white)](https://github.com/Mibuw/miEUDIverifier/pkgs/container/mieudiverifier) [![Wallets](https://img.shields.io/badge/wallets-EU%20reference%20%7C%20EUDIWalletDE-003399)](#-works-with-two-wallet-ecosystems--live-and-testable)
 
 **Reusable core library on NuGet:** `dotnet add package miEUDIverifier.Core`
 
 A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks to the
 **EUDI Verifier Backend REST API** (OpenID4VP) to read identity data from an EUDI Wallet.
+
+## ✅ Works with two wallet ecosystems — live and testable
+
+Verified end-to-end on **28 July 2026**: a full presentation completes with **both** the EU
+reference wallet and the **German EUDI Wallet (EUDIWalletDE, SPRIND sandbox)**. Publicly testable
+examples of the German ecosystem are hard to come by, so both are open here — code, deployment
+templates and the trust analysis behind them.
+
+| Ecosystem | Wallet | Verifier identity | Try it |
+|-----------|--------|-------------------|--------|
+| **EU reference** | EUDI Reference Wallet (iOS / Android) | eudiw.dev reference CA | [`/?backend=eu`](https://mieudiverifier.mitterbucher.com/?backend=eu) |
+| **Germany 🇩🇪** | EUDIWalletDE (SPRIND closed beta) | German Relying-Party Access CA, RP Access Certificate via the [SPRIND sandbox](https://sandbox.eudi-wallet.org/) | [`/?backend=de`](https://mieudiverifier.mitterbucher.com/?backend=de) |
+
+Pick your ecosystem with the switcher above the QR code — each has its own QR code, because a
+request object is signed by one access certificate and carries one `client_id`. One backend instance
+serves exactly one ecosystem; the app ties several together through
+[named backends](#multiple-trust-ecosystems-backend).
+
+What the German path requires beyond the EU one — and what it took to get there — is written up in
+[docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md): the `x509_hash` client-id prefix,
+an encrypted response (`direct_post.jwt`), a Registration Certificate for data minimisation, an
+mso_mdoc-only DCQL query, plus the certificate pitfalls (AIA/CRL are signed extensions, and a reused
+key makes old and new certificates share a Subject Key Identifier). All three failure modes surface
+in the wallet as the same unhelpful `Could not trust certificate chain`.
+
+---
 
 This verifier reads **only the PID credential** (Personal Identification Data) and only the
 following three attributes:
@@ -47,18 +73,9 @@ data – no manual reload needed.
 ## Try it (test endpoint)
 
 A public test instance is available at **https://miEUDIverifier.mitterbucher.com** —
-just open it and click **New request** to get a fresh QR code, then scan it with your EUDI Wallet App.
-
-The instance serves **two trust ecosystems**; pick the one matching your wallet with the switcher
-above the QR code, or go straight to it:
-
-| Wallet | Link |
-|--------|------|
-| EUDI reference wallet | [`/?backend=eu`](https://mieudiverifier.mitterbucher.com/?backend=eu) |
-| German EUDI Wallet (SPRIND sandbox) | [`/?backend=de`](https://mieudiverifier.mitterbucher.com/?backend=de) |
-
-Each ecosystem has its own QR code — see
-[Multiple trust ecosystems](#multiple-trust-ecosystems-backend) for why they cannot be merged.
+pick your ecosystem with the switcher above the QR code (or use the direct links
+[above](#-works-with-two-wallet-ecosystems--live-and-testable)), then scan the QR code with your
+EUDI Wallet App. **New request** gives you a fresh one.
 
 > _No guarantee of availability_ — this endpoint may be offline at any time. To run your own
 > instance, see the [Quick start](#quick-start) below.
