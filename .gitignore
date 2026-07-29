@@ -22,5 +22,5 @@ certs-de/
 registration-certificate*
 certificate-*.crt
 
-# Claude local files
+# Local AI/agent tooling state – never belongs in the repository
 .claude/
