@@ -33,6 +33,16 @@ public static class HtmlPage
             newRequest         = t["btnNewRequest"],
         });
 
+        // A transaction that could not be started leaves no QR to show. Render that state directly
+        // instead of emitting an empty data: URI (a broken image) that the 2s poll would only fix
+        // afterwards. Backend text is attacker-adjacent — it is escaped before it reaches the page.
+        var failed     = string.Equals(state.Status, "error", StringComparison.OrdinalIgnoreCase)
+                         || string.IsNullOrEmpty(state.QrBase64);
+        var hidden     = " style=\"display:none\"";
+        var statusText = failed
+            ? System.Net.WebUtility.HtmlEncode(t["errorPrefix"] + (state.ErrorMessage ?? t["unknown"]))
+            : t["waiting"];
+
         // Small note shown only for the German (mso_mdoc-only) backend, so testers use the right PID.
         var noteBlock = string.Equals(state.Backend, "de", StringComparison.OrdinalIgnoreCase)
             ? $"<p class=\"note\">{t["deNote"]}</p>"
@@ -44,7 +54,11 @@ public static class HtmlPage
             .Replace("___BACKEND_SWITCHER___", RenderBackendSwitcher(backends, state.Backend, t))
             .Replace("___NOTE_BLOCK___",      noteBlock)
             .Replace("___SUBTITLE___",        t["subtitle"])
-            .Replace("___WAITING___",         t["waiting"])
+            .Replace("___QR_STYLE___",        failed ? hidden : "")
+            .Replace("___SPINNER_STYLE___",   failed ? hidden : "")
+            .Replace("___HINT_STYLE___",      failed ? hidden : "")
+            .Replace("___STATUS_CLASS___",    failed ? "error" : "waiting")
+            .Replace("___STATUS_TEXT___",     statusText)
             .Replace("___HINT___",            t["hint"])
             .Replace("___RESULT_TITLE___",    t["resultTitle"])
             .Replace("___LABEL_FAMILY___",    t["labelFamily"])
@@ -442,7 +456,7 @@ public static class HtmlPage
             ___NOTE_BLOCK___
 
             <!-- QR Code -->
-            <div id="qr-section">
+            <div id="qr-section"___QR_STYLE___>
               <div class="qr-wrap">
                 <img src="data:image/png;base64,___QR_BASE64___"
                      alt="OpenID4VP QR code" />
@@ -450,12 +464,12 @@ public static class HtmlPage
             </div>
 
             <!-- Status -->
-            <div class="status waiting" id="status-badge">
-              <div class="spinner" id="spinner"></div>
-              <span id="status-text">___WAITING___</span>
+            <div class="status ___STATUS_CLASS___" id="status-badge">
+              <div class="spinner" id="spinner"___SPINNER_STYLE___></div>
+              <span id="status-text">___STATUS_TEXT___</span>
             </div>
 
-            <p class="hint" id="hint">___HINT___</p>
+            <p class="hint" id="hint"___HINT_STYLE___>___HINT___</p>
 
             <!-- Identity result -->
             <div class="result" id="result">

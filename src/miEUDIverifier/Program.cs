@@ -102,6 +102,35 @@ async Task StartNewTransaction(AppState state, VerifierApiService verifier, Canc
     Console.WriteLine($"  Transaction-ID : {transaction.TransactionId}");
 }
 
+// Starts a transaction but keeps a backend outage contained. A verifier backend we do not own
+// can start rejecting requests at any time (eudiw.dev began demanding a registration certificate);
+// letting that exception escape GET / turned the whole demo page into an empty 500, even though
+// the other ecosystem was healthy. The failure now lands in the AppState, so the page still
+// renders with a readable error and a working ecosystem switcher.
+// Returns false when no transaction exists and there is nothing to poll for.
+async Task<bool> TryStartTransaction(AppState state, VerifierApiService verifier, CancellationToken ct)
+{
+    try
+    {
+        await StartNewTransaction(state, verifier, ct);
+        return true;
+    }
+    catch (Exception ex)
+    {
+        state.PollingCts?.Cancel();
+        state.Status          = "error";
+        state.ErrorMessage    = ex.Message;
+        state.TransactionId   = string.Empty;
+        state.DeepLink        = string.Empty;
+        state.QrBase64        = string.Empty;
+        state.Identity        = null;
+        state.LastRawResponse = null;
+
+        Console.WriteLine($"  Transaction FAILED ({state.Backend}): {ex.Message}");
+        return false;
+    }
+}
+
 // Starts the background polling task for a transaction (against the given backend)
 void StartPolling(AppState state, VerifierApiService verifier, CancellationToken appStopping)
 {
@@ -167,8 +196,8 @@ async Task<AppState> GetOrCreateBrowserSessionAsync(HttpContext ctx)
     var backend   = requested is not null && services.ContainsKey(requested) ? requested : defaultBackend;
 
     var state = new AppState { Backend = backend };
-    await StartNewTransaction(state, services[backend], app.Lifetime.ApplicationStopping);
-    StartPolling(state, services[backend], app.Lifetime.ApplicationStopping);
+    if (await TryStartTransaction(state, services[backend], app.Lifetime.ApplicationStopping))
+        StartPolling(state, services[backend], app.Lifetime.ApplicationStopping);
 
     var id = sessions.Add(state);
     ctx.Response.Cookies.Append(BrowserSessionCookie, id, new CookieOptions
@@ -196,8 +225,8 @@ app.MapGet("/", async (HttpContext ctx) =>
         && !string.Equals(requested, state.Backend, StringComparison.OrdinalIgnoreCase))
     {
         state.Backend = requested;
-        await StartNewTransaction(state, target, app.Lifetime.ApplicationStopping);
-        StartPolling(state, target, app.Lifetime.ApplicationStopping);
+        if (await TryStartTransaction(state, target, app.Lifetime.ApplicationStopping))
+            StartPolling(state, target, app.Lifetime.ApplicationStopping);
     }
 
     return Results.Content(
