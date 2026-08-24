@@ -88,7 +88,7 @@ EUDI Wallet App. **New request** gives you a fresh one.
 ## Prerequisites
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
-- Internet access to `https://verifier.eudiw.dev` **or** Docker (for local operation)
+- Internet access to `https://verifier-backend.eudiw.dev` **or** Docker (for local operation)
 - EUDI Wallet App (Android / iOS) holding an issued PID credential – see the next section
 
 ## Set up the EUDI Wallet App & a test PID
@@ -277,11 +277,12 @@ your own backend and your own trust ecosystem.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `BackendUrl` | `https://verifier.eudiw.dev` | URL of the verifier backend (used when `Backends` is empty) |
+| `BackendUrl` | `https://verifier-backend.eudiw.dev` | URL of the verifier backend, i.e. the REST API — **not** `verifier.eudiw.dev`, which serves the demo UI (used when `Backends` is empty) |
 | `Backends` | *(empty)* | Named backends, key → base URL. Enables `?backend=<key>` and the UI switcher |
 | `DefaultBackend` | `eu` | Backend used when no `?backend=` is given |
 | `MdocOnlyBackends` | *(empty)* | Backend keys that request only the `mso_mdoc` PID (no SD-JWT alternatives) |
-| `IntendedUseIds` | *(empty)* | Backend key → `intended_use_id` (selects the backend's Registration Certificate) |
+| `IntendedUseId` | `TEST-01` | Fallback `intended_use_id` for backends with no `IntendedUseIds` entry. eudiw.dev requires one since August 2026; `TEST-01` is its public test entry |
+| `IntendedUseIds` | *(empty)* | Backend key → `intended_use_id` (selects the backend's Registration Certificate); overrides `IntendedUseId` |
 | `ResponseModes` | *(empty)* | Backend key → `direct_post` or `direct_post.jwt` (per-ecosystem override) |
 
 **Protocol**
