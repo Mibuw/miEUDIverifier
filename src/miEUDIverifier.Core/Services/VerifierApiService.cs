@@ -130,7 +130,7 @@ public class VerifierApiService
                 ? null
                 : _settings.IssuerChain,
             IntendedUseId = string.IsNullOrWhiteSpace(options.IntendedUseId)
-                ? null
+                ? (string.IsNullOrWhiteSpace(_settings.IntendedUseId) ? null : _settings.IntendedUseId)
                 : options.IntendedUseId,
             Nonce     = Guid.NewGuid().ToString("N"),
             DcqlQuery = new DcqlQuery

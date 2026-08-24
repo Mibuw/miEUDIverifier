@@ -138,6 +138,71 @@ public class VerifierApiServiceTests
     }
 
     [Fact]
+    public async Task InitializeTransactionAsync_SendsConfiguredIntendedUseId_WhenTransactionHasNone()
+    {
+        // Arrange: settings carry the fallback, the transaction does not
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        }, new VerifierSettings { IntendedUseId = "TEST-01" });
+
+        // Act: no TransactionOptions at all — the plain library-consumer call
+        await service.InitializeTransactionAsync();
+
+        // Assert: without this eudiw.dev answers MissingRegistrationCertificate
+        capturedBody.Should().Contain("intended_use_id");
+        capturedBody.Should().Contain("TEST-01");
+    }
+
+    [Fact]
+    public async Task InitializeTransactionAsync_PrefersTransactionIntendedUseId_OverConfiguredFallback()
+    {
+        // Arrange
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        }, new VerifierSettings { IntendedUseId = "TEST-01" });
+
+        // Act: a per-backend id, as the app resolves it from IntendedUseIds
+        await service.InitializeTransactionAsync(new TransactionOptions { IntendedUseId = "pos-pid-mdoc" });
+
+        // Assert: the German backend must not be handed the EU test intended use
+        capturedBody.Should().Contain("pos-pid-mdoc");
+        capturedBody.Should().NotContain("TEST-01");
+    }
+
+    [Fact]
+    public async Task InitializeTransactionAsync_OmitsIntendedUseId_WhenFallbackCleared()
+    {
+        // Arrange: an own backend that knows no intended uses
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        }, new VerifierSettings { IntendedUseId = "" });
+
+        // Act
+        await service.InitializeTransactionAsync();
+
+        // Assert: the field is omitted entirely rather than sent empty
+        capturedBody.Should().NotContain("intended_use_id");
+    }
+
+    [Fact]
     public async Task InitializeTransactionAsync_Throws_WhenBackendReturnsBadRequest()
     {
         // Arrange

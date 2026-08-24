@@ -45,7 +45,8 @@ var identity = await verifier.ExtractIdentityDataAsync(envelope);
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `BackendUrl` | `https://verifier.eudiw.dev` | Base URL of the EUDI verifier backend |
+| `BackendUrl` | `https://verifier-backend.eudiw.dev` | Base URL of the EUDI verifier backend (the REST API — **not** `verifier.eudiw.dev`, which serves the demo UI) |
+| `IntendedUseId` | `TEST-01` | Wallet-RP Intended Use id sent as `intended_use_id`. eudiw.dev requires one since August 2026; `TEST-01` is its public test entry |
 | `PollIntervalSeconds` | `3` | Polling interval for the wallet response |
 | `PollTimeoutSeconds` | `120` | Maximum wait time for the wallet response |
 | `Profile` | `openid4vp` | OpenID4VP profile (`openid4vp` or `haip`) |

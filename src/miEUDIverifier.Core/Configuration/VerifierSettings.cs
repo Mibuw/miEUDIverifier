@@ -9,10 +9,12 @@ public class VerifierSettings
 
     /// <summary>
     /// Base URL of the EUDI Verifier Backend.
-    /// Default: https://verifier.eudiw.dev (public demo instance)
+    /// Default: https://verifier-backend.eudiw.dev (the reference backend's REST API).
+    /// Note this is NOT https://verifier.eudiw.dev — that host serves the Angular demo UI and
+    /// answers the API paths with 405.
     /// For local development: http://localhost:8080
     /// </summary>
-    public string BackendUrl { get; set; } = "https://verifier.eudiw.dev";
+    public string BackendUrl { get; set; } = "https://verifier-backend.eudiw.dev";
 
     /// <summary>
     /// Named verifier backends selectable per verification via <c>?backend=&lt;key&gt;</c>.
@@ -38,8 +40,20 @@ public class VerifierSettings
     /// <summary>
     /// Per-backend Wallet Relying Party Intended Use id (key → id). Sent as <c>intended_use_id</c>
     /// so the backend attaches the matching Registration Certificate to the authorization request.
+    /// Falls back to <see cref="IntendedUseId"/> for backends with no entry here.
     /// </summary>
     public Dictionary<string, string> IntendedUseIds { get; set; } = new();
+
+    /// <summary>
+    /// Fallback Wallet Relying Party Intended Use id, used whenever the transaction does not carry
+    /// one of its own (mirrors how <see cref="ResponseMode"/> backs <see cref="ResponseModes"/>).
+    /// Defaults to <c>TEST-01</c>, the public test intended use eudiw.dev publishes at
+    /// <c>GET /ui/intended-uses</c> — since August 2026 it rejects a request without an
+    /// <c>intended_use_id</c> (<c>MissingRegistrationCertificate</c>). Registration certificates
+    /// are issued by a registrar, so a self-made one would not be trusted; this is the operator's
+    /// own test certificate. Set to an empty string when pointing at a backend of your own.
+    /// </summary>
+    public string IntendedUseId { get; set; } = "TEST-01";
 
     /// <summary>
     /// Per-backend OpenID4VP <c>response_mode</c> override (key → <c>direct_post</c> or
