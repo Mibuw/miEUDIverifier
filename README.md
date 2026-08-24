@@ -193,6 +193,7 @@ EUDI_VerifierSettings__Backends__eu="https://verifier-backend.eudiw.dev"   # EUD
 EUDI_VerifierSettings__Backends__de="http://eudi-verifier-backend-de:8080" # German EUDI Wallet (own backend)
 EUDI_VerifierSettings__DefaultBackend="eu"
 EUDI_VerifierSettings__MdocOnlyBackends__0="de"        # request only the mso_mdoc PID for "de"
+EUDI_VerifierSettings__IntendedUseIds__eu="TEST-01"      # required by eudiw.dev since Aug 2026 (see below)
 EUDI_VerifierSettings__IntendedUseIds__de="pos-pid-mdoc" # references the backend's Registration Certificate
 EUDI_VerifierSettings__ResponseModes__de="direct_post.jwt" # encrypted response (required by the German wallet)
 ```
@@ -202,6 +203,23 @@ A backend listed in `MdocOnlyBackends` requests **only** the `mso_mdoc` PID (no 
 — required when its Registration Certificate is scoped to mso_mdoc; the demo page then shows a small
 note so testers use the matching PID. `IntendedUseIds` maps a backend to a Wallet-RP Intended Use id
 sent as `intended_use_id`, so the backend attaches the matching Registration Certificate.
+
+> **eudiw.dev requires a Registration Certificate (since August 2026).** Without an
+> `intended_use_id` the reference backend now rejects every init request with
+> `400 {"error":"MissingRegistrationCertificate"}`. You do **not** need to obtain a certificate of
+> your own — a registration certificate is issued by a registrar, so a self-made one would not be
+> trusted anyway. eudiw.dev publishes a public test intended use instead; list it with:
+>
+> ```bash
+> curl https://verifier-backend.eudiw.dev/ui/intended-uses
+> # → {"intended_uses":[{"intended_use_id":"TEST-01","description":"For Testing Purposes", …}]}
+> ```
+>
+> Setting `IntendedUseIds__eu="TEST-01"` is enough to make the EU path work again. Its certificate
+> covers `mso_mdoc`/`eu.europa.ec.eudi.pid.1` (claim `birth_date`) and `dc+sd-jwt`/`urn:eudi:pid:1`
+> (claim `birthdate`), among others — so the PID request in this app fits it as-is. Mind that
+> claim-name split if you extend the query: the mdoc PID says `birth_date`, the SD-JWT PID
+> `birthdate`.
 
 > **Why more than one backend?** The German EUDI Wallet (EUDIWalletDE) only trusts a verifier whose
 > certificate comes from the German Relying-Party Access CA (obtained via the **SPRIND** sandbox),
