@@ -9,10 +9,15 @@ A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks 
 
 ## ✅ Works with two wallet ecosystems — live and testable
 
-Verified end-to-end on **28 July 2026**: a full presentation completes with **both** the EU
+Verified end-to-end on **24 August 2026**: a full presentation completes with **both** the EU
 reference wallet and the **German EUDI Wallet (EUDIWalletDE, SPRIND sandbox)**. Publicly testable
 examples of the German ecosystem are hard to come by, so both are open here — code, deployment
 templates and the trust analysis behind them.
+
+The currently verified configuration sends a Wallet-RP Intended Use id on **both** paths:
+`TEST-01` for `eu` (eudiw.dev requires a registration certificate since August 2026 — see
+[Multiple trust ecosystems](#multiple-trust-ecosystems-backend)) and `pos-pid-mdoc` for `de`.
+The German path first completed on 28 July 2026.
 
 | Ecosystem | Wallet | Verifier identity | Try it |
 |-----------|--------|-------------------|--------|
@@ -229,8 +234,10 @@ sent as `intended_use_id`, so the backend attaches the matching Registration Cer
 > SPRIND-issued `.p12` and set `Backends__de`. Without that entry the app serves `eu` only and hides
 > the switcher.
 >
-> **Status:** since **28 July 2026** the public demo completes a presentation with **both** wallets —
-> the EUDI reference wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`.
+> **Status:** the public demo completes a presentation with **both** wallets — the EUDI reference
+> wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`. The German path first
+> completed on **28 July 2026**; the EU path was re-verified on **24 August 2026** after eudiw.dev
+> began requiring a registration certificate, now sent as `IntendedUseIds__eu="TEST-01"`.
 >
 > Full background — trust model, why each wallet does or doesn't work, the SPRIND onboarding path
 > and the multi-backend design — is documented in
