@@ -9,15 +9,20 @@ A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks 
 
 ## ✅ Works with two wallet ecosystems — live and testable
 
-Verified end-to-end on **10 September 2026**: a full presentation completes with **both** the EU
+Verified end-to-end on **22 September 2026**: a full presentation completes with **both** the EU
 reference wallet and the **German EUDI Wallet (EUDIWalletDE, SPRIND sandbox)**. Publicly testable
 examples of the German ecosystem are hard to come by, so both are open here — code, deployment
 templates and the trust analysis behind them.
 
 The currently verified configuration sends a Wallet-RP Intended Use id on **both** paths:
 `TEST-01` for `eu` (eudiw.dev requires a registration certificate since August 2026 — see
-[Multiple trust ecosystems](#multiple-trust-ecosystems-backend)) and `pos-pid-mdoc` for `de`.
+[Multiple trust ecosystems](#multiple-trust-ecosystems-backend)) and `pos-pid` for `de`.
 The German path first completed on 28 July 2026.
+
+The German path runs against **one** Registration Certificate covering **both** PID formats, so a
+single QR code offers `mso_mdoc` and `dc+sd-jwt` as either/or alternatives and the wallet answers
+with whichever it holds. It requests seven attributes: family name, given name, date of birth,
+place of birth, nationality, issuing authority and issuing country.
 
 | Ecosystem | Wallet | Verifier identity | Try it |
 |-----------|--------|-------------------|--------|
@@ -224,18 +229,32 @@ note so testers use the matching PID. `SdJwtOnlyBackends` is the mirror image, f
 an SD-JWT VC certificate. `IntendedUseIds` maps a backend to a Wallet-RP Intended Use id sent as
 `intended_use_id`, so the backend attaches the matching Registration Certificate.
 
-> **One transaction carries exactly one Registration Certificate.** The verifier backend builds
-> `verifier_info` from the single certificate of the selected intended use (`IntendedUse` holds one
-> `registrationCertificate`, and the JAR is built as `listOf(verifierInfo)`), and a request may not
-> ask for more than that certificate covers.
+> ### 🇩🇪 Ask the SPRIND registrar for **one** certificate covering **both** formats
 >
-> That is a constraint on *certificates*, not on *formats*: the German developer guide's reference
-> PID request offers **both** `dc+sd-jwt` and `mso_mdoc` in one `dcql_query.credentials`, tied
-> together by `credential_sets.options` as either/or, with a single Registration Certificate in
-> `verifier_info` — the wallet then answers with whichever PID it holds. Reaching that requires **one**
-> certificate whose own `credentials` array covers both formats. Until then, two separately issued
-> certificates mean one QR code = one format, selected by pointing a backend key at the matching
-> intended use — which is what `MdocOnlyBackends` / `SdJwtOnlyBackends` are for.
+> When configuring an intended use in the [SPRIND sandbox registrar](https://sandbox.eudi-wallet.org/),
+> put **both** entries into the certificate's `credentials` array — `mso_mdoc` *and* `dc+sd-jwt`:
+>
+> ```json
+> "credentials": [
+>   { "format": "mso_mdoc",  "meta": { "doctype_value": "eu.europa.ec.eudi.pid.1" }, "claim": [ … ] },
+>   { "format": "dc+sd-jwt", "meta": { "vct_values": ["urn:eudi:pid:de:1"] },        "claim": [ … ] }
+> ]
+> ```
+>
+> **Why it matters.** A transaction carries exactly one Registration Certificate: the verifier
+> backend's `IntendedUse` holds a single `registrationCertificate` and builds the JAR as
+> `listOf(verifierInfo)`. A request may not ask for more than that certificate covers, so **two
+> separately issued certificates cannot be combined** — you would be back to one QR code per format.
+> With one certificate covering both, a single request offers them via `credential_sets.options`
+> as either/or, exactly as the German developer guide's reference PID request does, and the wallet
+> answers with whichever PID it holds. That matters because a wallet may carry only one of the two.
+>
+> Note the spelling differs per format: `birth_date`/`nationality` in mso_mdoc become
+> `birthdate`/`nationalities` in SD-JWT VC. `PidClaims` is given in mso_mdoc spelling and
+> translated automatically.
+>
+> If you are stuck with single-format certificates, `MdocOnlyBackends` / `SdJwtOnlyBackends` scope a
+> backend to one of them — a workaround, not the destination.
 
 > **eudiw.dev requires a Registration Certificate (since August 2026).** Without an
 > `intended_use_id` the reference backend now rejects every init request with
@@ -264,9 +283,10 @@ an SD-JWT VC certificate. `IntendedUseIds` maps a backend to a Wallet-RP Intende
 >
 > **Status:** the public demo completes a presentation with **both** wallets — the EUDI reference
 > wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`. Both paths were last
-> re-verified on **10 September 2026**. The German path first completed on **28 July 2026**; the
-> EU path was re-verified on **24 August 2026** after eudiw.dev began requiring a registration
-> certificate, now sent as `IntendedUseIds__eu="TEST-01"`.
+> re-verified on **22 September 2026**, the German one against a single Registration Certificate
+> covering `mso_mdoc` and `dc+sd-jwt` and returning seven PID attributes. The German path first
+> completed on **28 July 2026**; the EU path was re-verified on **24 August 2026** after eudiw.dev
+> began requiring a registration certificate, now sent as `IntendedUseIds__eu="TEST-01"`.
 >
 > Full background — trust model, why each wallet does or doesn't work, the SPRIND onboarding path
 > and the multi-backend design — is documented in
