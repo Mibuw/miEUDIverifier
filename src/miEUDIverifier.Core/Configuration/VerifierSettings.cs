@@ -38,6 +38,15 @@ public class VerifierSettings
     public List<string> MdocOnlyBackends { get; set; } = new();
 
     /// <summary>
+    /// Backend keys that request only the SD-JWT VC PID (no mso_mdoc alternative), e.g. a German
+    /// backend pointed at a Registration Certificate scoped to <c>dc+sd-jwt</c>. The mirror image
+    /// of <see cref="MdocOnlyBackends"/>: the verifier backend attaches exactly one Registration
+    /// Certificate per transaction, so a request must stay within the format that certificate
+    /// covers. Setting a backend in both lists is a configuration error and throws.
+    /// </summary>
+    public List<string> SdJwtOnlyBackends { get; set; } = new();
+
+    /// <summary>
     /// Per-backend Wallet Relying Party Intended Use id (key → id). Sent as <c>intended_use_id</c>
     /// so the backend attaches the matching Registration Certificate to the authorization request.
     /// Falls back to <see cref="IntendedUseId"/> for backends with no entry here.
@@ -107,15 +116,65 @@ public class VerifierSettings
     };
 
     /// <summary>
-    /// Accepted vct values for the German EUDI Wallet (Bundesdruckerei prototype) PID,
-    /// offered as an additional SD-JWT VC option. The German PID uses the OIDC-style
-    /// claim name "birthdate" instead of "birth_date", so it needs its own DCQL entry.
-    /// Set to an empty list to disable the option.
+    /// PID attributes to request, in mso_mdoc spelling — the canonical form. The SD-JWT VC options
+    /// translate the two names that differ there: <c>birth_date</c> → <c>birthdate</c> and
+    /// <c>nationality</c> → <c>nationalities</c>.
+    /// <para>
+    /// A backend fronting a Registration Certificate must request exactly the attributes that
+    /// certificate covers, so this is normally set per backend via
+    /// <see cref="PidClaimsByBackend"/>; the default stays at the three basic attributes.
+    /// </para>
+    /// </summary>
+    public List<string> PidClaims { get; set; } = new()
+    {
+        "family_name",
+        "given_name",
+        "birth_date",
+    };
+
+    /// <summary>
+    /// Per-backend PID attributes (key → attribute names in mso_mdoc spelling). Falls back to
+    /// <see cref="PidClaims"/> for backends with no entry here.
+    /// </summary>
+    public Dictionary<string, List<string>> PidClaimsByBackend { get; set; } = new();
+
+    /// <summary>
+    /// Per-backend accepted vct values for the generic SD-JWT VC PID (key → vct values). Falls back
+    /// to <see cref="SdJwtVctValues"/> for backends with no entry here; map a backend to an empty
+    /// list to drop the generic option, which is how a backend scoped to the German Registration
+    /// Certificate stays inside what that certificate covers.
+    /// </summary>
+    public Dictionary<string, List<string>> SdJwtVctValuesByBackend { get; set; } = new();
+
+    /// <summary>
+    /// Accepted vct values for the German EUDI Wallet PID, offered as an additional SD-JWT VC
+    /// option. The German PID uses the OIDC-style claim name "birthdate" instead of "birth_date",
+    /// so it needs its own DCQL entry. Set to an empty list to disable the option.
+    /// <para>
+    /// <c>urn:eudi:pid:de:1</c> is the identifier the BMI developer guide documents for the German
+    /// PID; the Bundesdruckerei URL is the older prototype value, kept so wallets still carrying it
+    /// keep matching. Used as the fallback for backends with no
+    /// <see cref="GermanPidVctValuesByBackend"/> entry.
+    /// </para>
     /// </summary>
     public List<string> GermanPidVctValues { get; set; } = new()
     {
+        "urn:eudi:pid:de:1",
         "https://demo.pid-issuer.bundesdruckerei.de/credentials/pid/1.0",
     };
+
+    /// <summary>
+    /// Per-backend accepted vct values for the German PID (key → vct values), mirroring how
+    /// <see cref="IntendedUseIds"/> backs <see cref="IntendedUseId"/>. Falls back to
+    /// <see cref="GermanPidVctValues"/> for backends with no entry here.
+    /// <para>
+    /// A backend fronting a Registration Certificate must request exactly the vct values that
+    /// certificate covers — asking for more than is registered makes the wallet abort. The tolerant
+    /// multi-value default is therefore right for an unregistered backend but wrong for a
+    /// registered one, e.g. <c>de</c> → <c>["urn:eudi:pid:de:1"]</c>.
+    /// </para>
+    /// </summary>
+    public Dictionary<string, List<string>> GermanPidVctValuesByBackend { get; set; } = new();
 
     /// <summary>
     /// Time-to-live (minutes) for REST-API verification sessions. Abandoned sessions are

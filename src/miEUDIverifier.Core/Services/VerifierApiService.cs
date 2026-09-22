@@ -37,75 +37,110 @@ public class VerifierApiService
 
     // ── Step 1: Initialize Transaction ───────────────────────────────────────
 
+    // The German and EU SD-JWT VC PIDs spell two attributes differently from mso_mdoc.
+    // Everything else is identical, so only these two need translating.
+    private static string ToSdJwtClaimName(string mdocClaimName) => mdocClaimName switch
+    {
+        "birth_date"  => "birthdate",
+        "nationality" => "nationalities",
+        _             => mdocClaimName,
+    };
+
+    // Blank entries are dropped so a vct list can be emptied from the environment: .NET
+    // configuration cannot express an empty collection, but "__0=" yields a single blank entry,
+    // which is how a backend scoped to a Registration Certificate switches an option off.
+    private static List<string> UsableVctValues(IEnumerable<string>? values) =>
+        values?.Where(v => !string.IsNullOrWhiteSpace(v)).ToList() ?? new List<string>();
+
     public async Task<InitTransactionResponse> InitializeTransactionAsync(
         TransactionOptions? options = null,
         CancellationToken ct = default)
     {
         options ??= new TransactionOptions();
+
+        // The verifier backend attaches exactly one Registration Certificate per transaction, so a
+        // request must stay inside the format that certificate covers. The two scoping flags are
+        // therefore mutually exclusive — together they would leave no credential to ask for.
+        if (options.MdocOnly && options.SdJwtOnly)
+        {
+            throw new InvalidOperationException(
+                "TransactionOptions.MdocOnly and SdJwtOnly are mutually exclusive.");
+        }
+
         var credentialId = Guid.NewGuid().ToString();
+        var credentials = new List<DcqlCredential>();
+        var credentialSetOptions = new List<List<string>>();
 
-        // mso_mdoc: claim paths are ["namespace", "element_identifier"]
-        var mdocClaims = new List<DcqlClaim>
+        // PID attributes in mso_mdoc spelling; the SD-JWT options translate the differing names.
+        var pidClaims = UsableVctValues(options.PidClaims ?? _settings.PidClaims);
+        if (pidClaims.Count == 0)
         {
-            new DcqlClaim { Path = new List<string> { PidNamespace, "family_name" } },
-            new DcqlClaim { Path = new List<string> { PidNamespace, "given_name" } },
-            new DcqlClaim { Path = new List<string> { PidNamespace, "birth_date" } },
-        };
+            throw new InvalidOperationException("No PID attributes configured to request.");
+        }
 
-        // Always request the mso_mdoc PID.
-        var credentials = new List<DcqlCredential>
+        // mso_mdoc PID — omitted only for backends scoped to an SD-JWT VC Registration Certificate.
+        if (!options.SdJwtOnly)
         {
-            new DcqlCredential
+            credentials.Add(new DcqlCredential
             {
                 Id     = credentialId + "-mdoc",
                 Format = "mso_mdoc",
                 Meta   = new DcqlCredentialMeta { DoctypeValue = PidNamespace },
-                Claims = mdocClaims,
-            },
-        };
-        var credentialSetOptions = new List<List<string>>
-        {
-            new List<string> { credentialId + "-mdoc" },
-        };
+                // mso_mdoc: claim paths are ["namespace", "element_identifier"]
+                Claims = pidClaims
+                    .Select(c => new DcqlClaim { Path = new List<string> { PidNamespace, c } })
+                    .ToList(),
+            });
+            credentialSetOptions.Add(new List<string> { credentialId + "-mdoc" });
+        }
 
-        // The SD-JWT VC alternatives are only added for "full" backends. They are omitted when
-        // MdocOnly is set (e.g. the German sandbox, whose Registration Certificate is scoped to
-        // mso_mdoc — requesting more than registered would make the wallet abort).
+        // SD-JWT VC alternatives — omitted for backends scoped to an mso_mdoc Registration
+        // Certificate (e.g. the German sandbox): requesting more than registered makes the wallet
+        // abort. Each option is driven by its own vct list; an empty list disables it, which is how
+        // a registered backend narrows the request to exactly what its certificate covers.
         if (!options.MdocOnly)
         {
             // SD-JWT VC: claim paths are flat ["claim_name"]
-            credentials.Add(new DcqlCredential
+            var sdJwtVctValues = UsableVctValues(options.SdJwtVctValues ?? _settings.SdJwtVctValues);
+            if (sdJwtVctValues is { Count: > 0 })
             {
-                Id     = credentialId + "-sdjwt",
-                Format = _settings.SdJwtFormat,
-                Meta   = new DcqlCredentialMeta { VctValues = _settings.SdJwtVctValues },
-                Claims = new List<DcqlClaim>
+                credentials.Add(new DcqlCredential
                 {
-                    new DcqlClaim { Path = new List<string> { "family_name" } },
-                    new DcqlClaim { Path = new List<string> { "given_name" } },
-                    new DcqlClaim { Path = new List<string> { "birth_date" } },
-                },
-            });
-            credentialSetOptions.Add(new List<string> { credentialId + "-sdjwt" });
+                    Id     = credentialId + "-sdjwt",
+                    Format = _settings.SdJwtFormat,
+                    Meta   = new DcqlCredentialMeta { VctValues = sdJwtVctValues },
+                    Claims = new List<DcqlClaim>
+                    {
+                        new DcqlClaim { Path = new List<string> { "family_name" } },
+                        new DcqlClaim { Path = new List<string> { "given_name" } },
+                        new DcqlClaim { Path = new List<string> { "birth_date" } },
+                    },
+                });
+                credentialSetOptions.Add(new List<string> { credentialId + "-sdjwt" });
+            }
 
-            // German EUDI Wallet (Bundesdruckerei prototype PID): own vct and the OIDC-style
-            // claim name "birthdate" instead of "birth_date" → needs a separate DCQL entry.
-            if (_settings.GermanPidVctValues is { Count: > 0 })
+            // German EUDI Wallet PID: own vct (urn:eudi:pid:de:1) and the OIDC-style claim name
+            // "birthdate" instead of "birth_date" → needs a separate DCQL entry.
+            var germanPidVctValues = UsableVctValues(options.GermanPidVctValues ?? _settings.GermanPidVctValues);
+            if (germanPidVctValues is { Count: > 0 })
             {
                 credentials.Add(new DcqlCredential
                 {
                     Id     = credentialId + "-sdjwt-de",
                     Format = _settings.SdJwtFormat,
-                    Meta   = new DcqlCredentialMeta { VctValues = _settings.GermanPidVctValues },
-                    Claims = new List<DcqlClaim>
-                    {
-                        new DcqlClaim { Path = new List<string> { "family_name" } },
-                        new DcqlClaim { Path = new List<string> { "given_name" } },
-                        new DcqlClaim { Path = new List<string> { "birthdate" } },
-                    },
+                    Meta   = new DcqlCredentialMeta { VctValues = germanPidVctValues },
+                    Claims = pidClaims
+                        .Select(c => new DcqlClaim { Path = new List<string> { ToSdJwtClaimName(c) } })
+                        .ToList(),
                 });
                 credentialSetOptions.Add(new List<string> { credentialId + "-sdjwt-de" });
             }
+        }
+
+        if (credentials.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "No credential options left to request — check SdJwtOnly against the configured vct values.");
         }
 
         var credentialSets = new List<DcqlCredentialSet>
@@ -379,6 +414,10 @@ public class VerifierApiService
                     case "family_name": identity.FamilyName = GetStringValue(claim.Value); break;
                     case "given_name":  identity.GivenName  = GetStringValue(claim.Value)?.Trim(); break;
                     case "birth_date":  identity.BirthDate  = ParseDateValue(claim.Value); break;
+                    case "place_of_birth":    identity.PlaceOfBirth     = GetPlaceValue(claim.Value); break;
+                    case "nationality":       identity.Nationality      = GetStringValue(claim.Value); break;
+                    case "issuing_authority": identity.IssuingAuthority = GetStringValue(claim.Value); break;
+                    case "issuing_country":   identity.IssuingCountry   = GetStringValue(claim.Value); break;
                     default:
                         var v = GetStringValue(claim.Value);
                         if (v != null)
@@ -406,6 +445,12 @@ public class VerifierApiService
             // EUDI PID uses "birth_date"; accept the OIDC-style "birthdate" as an alias too.
             case "birth_date":
             case "birthdate":   identity.BirthDate  = ParseDateValue(value); break;
+            case "place_of_birth":    identity.PlaceOfBirth     = GetPlaceValue(value); break;
+            // mso_mdoc spells this "nationality", SD-JWT VC "nationalities" — accept both.
+            case "nationality":
+            case "nationalities":     identity.Nationality      = GetStringValue(value); break;
+            case "issuing_authority": identity.IssuingAuthority = GetStringValue(value); break;
+            case "issuing_country":   identity.IssuingCountry   = GetStringValue(value); break;
             case null:          break;
             default:
                 var v = GetStringValue(value);
@@ -471,8 +516,37 @@ public class VerifierApiService
             case JsonValueKind.Number: return el.GetRawText();
             case JsonValueKind.True:   return "true";
             case JsonValueKind.False:  return "false";
+            // PID attributes like nationality are arrays; without this they would be dropped
+            // silently, here and in AdditionalClaims.
+            case JsonValueKind.Array:
+                var items = el.EnumerateArray()
+                    .Select(GetStringValue)
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .ToList();
+                return items.Count > 0 ? string.Join(", ", items) : null;
+            case JsonValueKind.Object: return el.GetRawText();
             default:                   return null;
         }
+    }
+
+    /// <summary>
+    /// Extracts a place of birth. Both PID formats carry a structured value; the German PID
+    /// populates only "locality", so that is preferred, with the raw value as a fallback.
+    /// </summary>
+    private static string? GetPlaceValue(JsonElement el)
+    {
+        if (el.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in new[] { "locality", "country", "region" })
+            {
+                if (el.TryGetProperty(name, out var v))
+                {
+                    var s = GetStringValue(v);
+                    if (!string.IsNullOrWhiteSpace(s)) return s;
+                }
+            }
+        }
+        return GetStringValue(el);
     }
 
     /// <summary>

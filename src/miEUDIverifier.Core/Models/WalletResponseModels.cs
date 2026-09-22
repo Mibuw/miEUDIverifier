@@ -93,6 +93,20 @@ public class IdentityData
     public string? GivenName { get; set; }
     public string? BirthDate { get; set; }
 
+    /// <summary>Place of birth. Both PID formats carry a structured value of which the German
+    /// PID populates only the locality, so that is what is extracted.</summary>
+    public string? PlaceOfBirth { get; set; }
+
+    /// <summary>Nationality/nationalities as ISO 3166-1 alpha-2 codes; multiple values are
+    /// joined with ", ". mso_mdoc spells this "nationality", SD-JWT VC "nationalities".</summary>
+    public string? Nationality { get; set; }
+
+    /// <summary>Issuing authority of the PID.</summary>
+    public string? IssuingAuthority { get; set; }
+
+    /// <summary>Issuing country of the PID (ISO 3166-1 alpha-2).</summary>
+    public string? IssuingCountry { get; set; }
+
     /// <summary>Source credential format ("mso_mdoc" or "dc+sd-jwt").</summary>
     public string? CredentialFormat { get; set; }
 

@@ -197,17 +197,45 @@ backends via environment (fluent with the `EUDI_` prefix):
 EUDI_VerifierSettings__Backends__eu="https://verifier-backend.eudiw.dev"   # EUDI reference wallet
 EUDI_VerifierSettings__Backends__de="http://eudi-verifier-backend-de:8080" # German EUDI Wallet (own backend)
 EUDI_VerifierSettings__DefaultBackend="eu"
-EUDI_VerifierSettings__MdocOnlyBackends__0="de"        # request only the mso_mdoc PID for "de"
-EUDI_VerifierSettings__IntendedUseIds__eu="TEST-01"      # required by eudiw.dev since Aug 2026 (see below)
-EUDI_VerifierSettings__IntendedUseIds__de="pos-pid-mdoc" # references the backend's Registration Certificate
+EUDI_VerifierSettings__IntendedUseIds__eu="TEST-01"   # required by eudiw.dev since Aug 2026 (see below)
+EUDI_VerifierSettings__IntendedUseIds__de="pos-pid"   # references the backend's Registration Certificate
 EUDI_VerifierSettings__ResponseModes__de="direct_post.jwt" # encrypted response (required by the German wallet)
+
+# "de" runs against one Registration Certificate covering mso_mdoc AND dc+sd-jwt, so both are
+# offered as either/or and "de" is NOT in MdocOnlyBackends. The generic EU SD-JWT option is
+# dropped because that certificate does not cover it:
+EUDI_VerifierSettings__SdJwtVctValuesByBackend__de__0=""
+EUDI_VerifierSettings__GermanPidVctValuesByBackend__de__0="urn:eudi:pid:de:1"
+
+# Attributes, in mso_mdoc spelling (SD-JWT gets birthdate / nationalities automatically):
+EUDI_VerifierSettings__PidClaimsByBackend__de__0="family_name"
+EUDI_VerifierSettings__PidClaimsByBackend__de__1="given_name"
+EUDI_VerifierSettings__PidClaimsByBackend__de__2="birth_date"
+EUDI_VerifierSettings__PidClaimsByBackend__de__3="place_of_birth"
+EUDI_VerifierSettings__PidClaimsByBackend__de__4="nationality"
+EUDI_VerifierSettings__PidClaimsByBackend__de__5="issuing_authority"
+EUDI_VerifierSettings__PidClaimsByBackend__de__6="issuing_country"
 ```
 
 When `Backends` is not set, the single `BackendUrl` is used as the `eu` backend (unchanged default).
 A backend listed in `MdocOnlyBackends` requests **only** the `mso_mdoc` PID (no SD-JWT alternatives)
 — required when its Registration Certificate is scoped to mso_mdoc; the demo page then shows a small
-note so testers use the matching PID. `IntendedUseIds` maps a backend to a Wallet-RP Intended Use id
-sent as `intended_use_id`, so the backend attaches the matching Registration Certificate.
+note so testers use the matching PID. `SdJwtOnlyBackends` is the mirror image, for a backend fronting
+an SD-JWT VC certificate. `IntendedUseIds` maps a backend to a Wallet-RP Intended Use id sent as
+`intended_use_id`, so the backend attaches the matching Registration Certificate.
+
+> **One transaction carries exactly one Registration Certificate.** The verifier backend builds
+> `verifier_info` from the single certificate of the selected intended use (`IntendedUse` holds one
+> `registrationCertificate`, and the JAR is built as `listOf(verifierInfo)`), and a request may not
+> ask for more than that certificate covers.
+>
+> That is a constraint on *certificates*, not on *formats*: the German developer guide's reference
+> PID request offers **both** `dc+sd-jwt` and `mso_mdoc` in one `dcql_query.credentials`, tied
+> together by `credential_sets.options` as either/or, with a single Registration Certificate in
+> `verifier_info` — the wallet then answers with whichever PID it holds. Reaching that requires **one**
+> certificate whose own `credentials` array covers both formats. Until then, two separately issued
+> certificates mean one QR code = one format, selected by pointing a backend key at the matching
+> intended use — which is what `MdocOnlyBackends` / `SdJwtOnlyBackends` are for.
 
 > **eudiw.dev requires a Registration Certificate (since August 2026).** Without an
 > `intended_use_id` the reference backend now rejects every init request with
@@ -309,8 +337,12 @@ your own backend and your own trust ecosystem.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `SdJwtFormat` | `dc+sd-jwt` | DCQL format id for SD-JWT VC (older stacks used `vc+sd-jwt`) |
+| `PidClaims` | name + birth date | PID attributes to request, in mso_mdoc spelling (`birth_date`/`nationality` become `birthdate`/`nationalities` for SD-JWT) |
+| `PidClaimsByBackend` | — | Per-backend override of `PidClaims` |
 | `SdJwtVctValues` | ARF + spec example | Accepted `vct` values for the SD-JWT VC PID |
-| `GermanPidVctValues` | Bundesdruckerei prototype | Accepted `vct` values for the German PID; empty list disables that DCQL option |
+| `SdJwtVctValuesByBackend` | — | Per-backend override of `SdJwtVctValues`; a blank entry drops the option |
+| `GermanPidVctValues` | `urn:eudi:pid:de:1` + Bundesdruckerei prototype | Accepted `vct` values for the German PID; empty list disables that DCQL option |
+| `GermanPidVctValuesByBackend` | — | Per-backend override of `GermanPidVctValues`; a blank entry drops the option |
 | `IssuerChain` | EUDI demo CA | PEM certificate chain of the trusted PID issuer |
 
 **Runtime**
