@@ -65,10 +65,18 @@ binding.
 
 ## What it requests
 
-Only the **PID credential** with three attributes — `family_name`, `given_name`, `birth_date` —
-offered to the wallet as *either* `mso_mdoc` *or* `dc+sd-jwt` (DCQL `credential_sets` options).
-The DCQL query is built in `VerifierApiService.InitializeTransactionAsync` and can easily be
-extended with more attributes or credential types.
+Only the **PID credential**, offered to the wallet as *either* `mso_mdoc` *or* `dc+sd-jwt`
+(DCQL `credential_sets` options), so it can answer with whichever it holds.
+
+Which attributes are requested is configuration: `PidClaims` sets the default and
+`PidClaimsByBackend` overrides it per backend. Attributes are given in **mso_mdoc spelling** and
+translated for SD-JWT VC, where `birth_date` becomes `birthdate` and `nationality` becomes
+`nationalities`. The default is `family_name`, `given_name` and `birth_date`; `place_of_birth`,
+`nationality`, `issuing_authority` and `issuing_country` are mapped onto `IdentityData` as well.
+Anything else the wallet returns is kept in `AdditionalClaims`.
+
+Note that a backend fronting a Registration Certificate may not request more than that certificate
+covers — the wallet aborts otherwise.
 
 ## License
 
