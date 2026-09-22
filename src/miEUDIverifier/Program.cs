@@ -254,6 +254,10 @@ app.MapGet("/api/status", (HttpContext ctx) =>
         familyName = state.Identity?.FamilyName,
         givenName  = state.Identity?.GivenName,
         birthDate  = state.Identity?.BirthDate,
+        placeOfBirth     = state.Identity?.PlaceOfBirth,
+        nationality      = state.Identity?.Nationality,
+        issuingAuthority = state.Identity?.IssuingAuthority,
+        issuingCountry   = state.Identity?.IssuingCountry,
         format     = state.Identity?.CredentialFormat,
         error      = state.ErrorMessage,
     });
@@ -387,6 +391,10 @@ app.MapGet("/api/verification/{id}/data", (string id) =>
             familyName = state.Identity.FamilyName,
             givenName  = state.Identity.GivenName,
             birthDate  = state.Identity.BirthDate,
+            placeOfBirth     = state.Identity.PlaceOfBirth,
+            nationality      = state.Identity.Nationality,
+            issuingAuthority = state.Identity.IssuingAuthority,
+            issuingCountry   = state.Identity.IssuingCountry,
             format     = state.Identity.CredentialFormat,
         });
     }

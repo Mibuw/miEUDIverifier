@@ -64,6 +64,10 @@ public static class HtmlPage
             .Replace("___LABEL_FAMILY___",    t["labelFamily"])
             .Replace("___LABEL_GIVEN___",     t["labelGiven"])
             .Replace("___LABEL_BIRTH___",     t["labelBirth"])
+            .Replace("___LABEL_PLACE___",     t["labelPlace"])
+            .Replace("___LABEL_NATIONALITY___", t["labelNationality"])
+            .Replace("___LABEL_AUTHORITY___", t["labelAuthority"])
+            .Replace("___LABEL_COUNTRY___",   t["labelCountry"])
             .Replace("___BTN_SCAN_AGAIN___",  t["btnScanAgain"])
             .Replace("___BTN_NEW_REQUEST___", t["btnNewRequest"])
             .Replace("___T_JSON___",          js);
@@ -140,9 +144,13 @@ public static class HtmlPage
         ["labelFamily"]        = "Familienname",
         ["labelGiven"]         = "Vorname",
         ["labelBirth"]         = "Geburtsdatum",
+        ["labelPlace"]         = "Geburtsort",
+        ["labelNationality"]   = "Staatsangehörigkeit",
+        ["labelAuthority"]     = "Ausstellende Behörde",
+        ["labelCountry"]       = "Ausstellungsland",
         ["btnScanAgain"]       = "Neuen Scan starten",
         ["btnNewRequest"]      = "Neuer Request",
-        ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Es wird ausschließlich die PID im Format mso_mdoc (Familienname, Vorname, Geburtsdatum) angefragt.",
+        ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Angefragt wird die PID wahlweise als mso_mdoc oder SD-JWT VC – Familienname, Vorname, Geburtsdatum, Geburtsort, Staatsangehörigkeit, ausstellende Behörde und Ausstellungsland.",
         ["backendNav"]         = "Trust-Ökosystem wählen",
         ["backend_eu"]         = "EU-Referenzwallet",
         ["backend_de"]         = "Deutsche Wallet",
@@ -162,9 +170,13 @@ public static class HtmlPage
         ["labelFamily"]        = "Family name",
         ["labelGiven"]         = "Given name",
         ["labelBirth"]         = "Date of birth",
+        ["labelPlace"]         = "Place of birth",
+        ["labelNationality"]   = "Nationality",
+        ["labelAuthority"]     = "Issuing authority",
+        ["labelCountry"]       = "Issuing country",
         ["btnScanAgain"]       = "Start new scan",
         ["btnNewRequest"]      = "New request",
-        ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): only the mso_mdoc PID (family name, given name, date of birth) is requested.",
+        ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): the PID is requested as either mso_mdoc or SD-JWT VC – family name, given name, date of birth, place of birth, nationality, issuing authority and issuing country.",
         ["backendNav"]         = "Choose trust ecosystem",
         ["backend_eu"]         = "EU reference wallet",
         ["backend_de"]         = "German wallet",
@@ -486,6 +498,22 @@ public static class HtmlPage
                 <span class="field-label">___LABEL_BIRTH___</span>
                 <span class="field-value" id="r-birth">&mdash;</span>
               </div>
+              <div class="field" id="row-place" style="display:none">
+                <span class="field-label">___LABEL_PLACE___</span>
+                <span class="field-value" id="r-place">&mdash;</span>
+              </div>
+              <div class="field" id="row-nationality" style="display:none">
+                <span class="field-label">___LABEL_NATIONALITY___</span>
+                <span class="field-value" id="r-nationality">&mdash;</span>
+              </div>
+              <div class="field" id="row-authority" style="display:none">
+                <span class="field-label">___LABEL_AUTHORITY___</span>
+                <span class="field-value" id="r-authority">&mdash;</span>
+              </div>
+              <div class="field" id="row-country" style="display:none">
+                <span class="field-label">___LABEL_COUNTRY___</span>
+                <span class="field-value" id="r-country">&mdash;</span>
+              </div>
               <div class="format-tag" id="r-format"></div>
               <button class="scan-again-btn" onclick="resetRequest()">
                 &#8635;&ensp;___BTN_SCAN_AGAIN___
@@ -526,6 +554,24 @@ public static class HtmlPage
                   document.getElementById('r-family').textContent = d.familyName || '—';
                   document.getElementById('r-given').textContent  = d.givenName  || '—';
                   document.getElementById('r-birth').textContent  = d.birthDate  || '—';
+
+                  // Optional attributes: only shown when the wallet actually returned them.
+                  // The eu path still requests just the three basic ones.
+                  const optional = [
+                    ['row-place',       'r-place',       d.placeOfBirth],
+                    ['row-nationality', 'r-nationality', d.nationality],
+                    ['row-authority',   'r-authority',   d.issuingAuthority],
+                    ['row-country',     'r-country',     d.issuingCountry],
+                  ];
+                  for (const [rowId, valueId, value] of optional) {
+                    const row = document.getElementById(rowId);
+                    if (value) {
+                      document.getElementById(valueId).textContent = value;
+                      row.style.display = '';
+                    } else {
+                      row.style.display = 'none';
+                    }
+                  }
                   if (d.format) {
                     document.getElementById('r-format').textContent = 'Format: ' + d.format;
                   }

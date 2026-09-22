@@ -85,6 +85,13 @@ services:
          "pubeaa":{"vcts":[],"docTypes":[]},
          "eaa":[{"useCase":"mDL","vcts":[],"docTypes":["org.iso.18013.5.1.mDL"]}]}
 
+      # Status check of the presented PID. Upstream renamed this from
+      # VERIFIER_VALIDATION_SDJWTVC_STATUSCHECK_ENABLED (SD-JWT VC only) to the name below, which
+      # now covers every format — an older deployment carrying the old name has it silently
+      # ignored. Default is "true"; leave it on unless a status list is genuinely unreachable,
+      # since this is what catches a revoked PID.
+      VERIFIER_VALIDATION_STATUSCHECK_ENABLED: "true"
+
       CORS_ORIGINS: "*"
       CORS_METHODS: "*"
       CORS_HEADERS: "*"
