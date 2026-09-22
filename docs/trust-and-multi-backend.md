@@ -223,12 +223,30 @@ participate has to pass this sandbox."*
 
 Steps:
 
-1. Define the use case (PID → family name, given name, date of birth) per the German PID Rulebook.
+1. Define the use case per the German PID Rulebook. Note which attributes the German PID actually
+   carries — the portrait, document number, sex, e-mail, phone number and expiry date are **not**
+   included, so a use case built around them cannot be fulfilled.
 2. Submit the **intent form** (linked from the BMI developer guide).
 3. Attend the monthly **kick-off call** → receive Closed-Beta wallet access + **Registrar portal**
    access (`https://sandbox.eudi-wallet.org/`).
 4. Configure Access/Registration Certificates in the registrar → download a **PKCS#12 (`.p12`)**
    with the private key + RP access certificate.
+
+   **Put both PID formats into one Registration Certificate.** Its `credentials` array takes
+   several entries, and a certificate listing `mso_mdoc` (doctype `eu.europa.ec.eudi.pid.1`)
+   *and* `dc+sd-jwt` (vct `urn:eudi:pid:de:1`) lets one request offer them as either/or via DCQL
+   `credential_sets` — the pattern the German developer guide documents for PID presentations.
+   The wallet then answers with whichever PID it holds, which matters because it may carry only
+   one of the two.
+
+   Two separately issued certificates do **not** add up to the same thing: a transaction carries
+   exactly one Registration Certificate (`IntendedUse` holds a single `registrationCertificate`,
+   and the JAR is built as `listOf(verifierInfo)`), and a request may not exceed what that one
+   certificate covers. Asking for a second certificate afterwards means a second round trip
+   through the registrar — cheaper to get it right in one go.
+
+   Mind the per-format spelling: `birth_date`/`nationality` in mso_mdoc are `birthdate`/
+   `nationalities` in SD-JWT VC.
 5. Load that `.p12` into the verifier backend's JAR-signing keystore. Its `x5c` is then trusted by
    EUDIWalletDE.
 
