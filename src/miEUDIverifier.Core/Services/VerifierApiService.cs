@@ -1,6 +1,8 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using miEUDIverifier.Configuration;
 using miEUDIverifier.Models;
 using Microsoft.Extensions.Logging;
@@ -471,41 +473,154 @@ public class VerifierApiService
         identity.CredentialFormat ??= _settings.SdJwtFormat;
         var segments = sdJwt.Split('~');
 
-        // 1) Plaintext claims directly in the issuer JWT payload (segment 0 = header.payload.sig).
-        var jwtParts = segments[0].Split('.');
-        if (jwtParts.Length >= 2)
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(Base64UrlDecode(jwtParts[1]));
-                if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                    ExtractFromSdJwt(doc.RootElement, identity);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to parse SD-JWT issuer payload.");
-            }
-        }
-
-        // 2) Disclosures: each is base64url(JSON [salt, claim_name, claim_value]).
-        //    The trailing segment may be a key-binding JWT (contains '.') → skip it.
+        // Disclosures are the segments after the issuer JWT. The trailing one may be a
+        // key-binding JWT, which is recognisable by its dots.
+        var disclosures = new List<string>();
         for (var i = 1; i < segments.Length; i++)
         {
             var seg = segments[i];
-            if (string.IsNullOrEmpty(seg) || seg.Contains('.')) continue;
+            if (!string.IsNullOrEmpty(seg) && !seg.Contains('.')) disclosures.Add(seg);
+        }
 
+        var jwtParts = segments[0].Split('.');
+        if (jwtParts.Length < 2) return;
+
+        JsonNode? payload;
+        try
+        {
+            payload = JsonNode.Parse(Base64UrlDecode(jwtParts[1]));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse SD-JWT issuer payload.");
+            return;
+        }
+        if (payload is not JsonObject payloadObject) return;
+
+        // Map each disclosure by its digest, so _sd entries and array elements can be resolved.
+        var hashAlgorithm = payloadObject["_sd_alg"]?.GetValue<string>() ?? "sha-256";
+        var byDigest = new Dictionary<string, JsonArray>(StringComparer.Ordinal);
+        foreach (var seg in disclosures)
+        {
             try
             {
-                using var doc = JsonDocument.Parse(Base64UrlDecode(seg));
-                var arr = doc.RootElement;
-                if (arr.ValueKind == JsonValueKind.Array && arr.GetArrayLength() == 3)
-                    ApplySdJwtClaim(arr[1].GetString(), arr[2], identity);
+                if (JsonNode.Parse(Base64UrlDecode(seg)) is JsonArray arr && arr.Count is 2 or 3)
+                    byDigest[ComputeDisclosureDigest(seg, hashAlgorithm)] = arr;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to parse SD-JWT disclosure.");
             }
         }
+
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        ResolveDisclosures(payloadObject, byDigest, used, depth: 0);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadObject.ToJsonString());
+            ExtractFromSdJwt(doc.RootElement, identity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read resolved SD-JWT payload.");
+        }
+
+        // Any disclosure the payload never referenced is still applied by name. Earlier versions
+        // applied every disclosure blindly; keeping that as a fallback avoids losing data from a
+        // wallet that omits the matching _sd entry.
+        foreach (var (digest, arr) in byDigest)
+        {
+            if (used.Contains(digest) || arr.Count != 3) continue;
+            using var doc = JsonDocument.Parse(arr.ToJsonString());
+            ApplySdJwtClaim(doc.RootElement[1].GetString(), doc.RootElement[2], identity);
+        }
+    }
+
+    /// <summary>
+    /// Replaces SD-JWT selective-disclosure placeholders with their disclosed values, in place.
+    /// Objects carry an <c>_sd</c> array of digests standing for hidden properties; array elements
+    /// are hidden as <c>{"...": "&lt;digest&gt;"}</c>. Both forms nest, so this recurses — which is
+    /// what a flat pass misses for place of birth (a nested object) and nationalities (an array).
+    /// </summary>
+    private static void ResolveDisclosures(
+        JsonNode? node,
+        IReadOnlyDictionary<string, JsonArray> byDigest,
+        HashSet<string> used,
+        int depth)
+    {
+        const int maxDepth = 32;
+        if (node is null || depth > maxDepth) return;
+
+        if (node is JsonObject obj)
+        {
+            // Hidden properties: _sd holds their digests, each disclosure being [salt, name, value].
+            if (obj["_sd"] is JsonArray sd)
+            {
+                foreach (var digestNode in sd)
+                {
+                    var digest = digestNode?.GetValue<string>();
+                    if (digest is null || !byDigest.TryGetValue(digest, out var disclosure)) continue;
+                    if (disclosure.Count != 3) continue;
+
+                    var name = disclosure[1]?.GetValue<string>();
+                    if (name is null || obj.ContainsKey(name)) continue;
+
+                    used.Add(digest);
+                    obj[name] = disclosure[2]?.DeepClone();
+                }
+            }
+            obj.Remove("_sd");
+            obj.Remove("_sd_alg");
+
+            foreach (var key in obj.Select(kv => kv.Key).ToList())
+                ResolveDisclosures(obj[key], byDigest, used, depth + 1);
+            return;
+        }
+
+        if (node is JsonArray array)
+        {
+            for (var i = 0; i < array.Count; i++)
+            {
+                // A hidden element is {"...": "<digest>"}; its disclosure is [salt, value].
+                if (array[i] is JsonObject element
+                    && element.Count == 1
+                    && element["..."]?.GetValue<string>() is { } digest)
+                {
+                    if (byDigest.TryGetValue(digest, out var disclosure) && disclosure.Count == 2)
+                    {
+                        used.Add(digest);
+                        array[i] = disclosure[1]?.DeepClone();
+                    }
+                    else
+                    {
+                        // Not disclosed by the holder — drop it rather than render the placeholder.
+                        array[i] = null;
+                    }
+                    continue;
+                }
+                ResolveDisclosures(array[i], byDigest, used, depth + 1);
+            }
+
+            for (var i = array.Count - 1; i >= 0; i--)
+                if (array[i] is null) array.RemoveAt(i);
+        }
+    }
+
+    /// <summary>
+    /// Digest of a disclosure: the hash of its base64url string exactly as it appears in the
+    /// token, base64url encoded. Driven by the payload's <c>_sd_alg</c> (default sha-256).
+    /// </summary>
+    private static string ComputeDisclosureDigest(string disclosureSegment, string hashAlgorithm)
+    {
+        var bytes = System.Text.Encoding.ASCII.GetBytes(disclosureSegment);
+        byte[] hash = hashAlgorithm.ToLowerInvariant() switch
+        {
+            "sha-384" => SHA384.HashData(bytes),
+            "sha-512" => SHA512.HashData(bytes),
+            _         => SHA256.HashData(bytes),
+        };
+        return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
     private static string? GetStringValue(JsonElement el)
