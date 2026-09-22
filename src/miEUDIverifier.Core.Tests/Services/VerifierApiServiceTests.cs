@@ -138,6 +138,148 @@ public class VerifierApiServiceTests
     }
 
     [Fact]
+    public async Task InitializeTransactionAsync_SdJwtOnly_OmitsMdoc_AndScopesToGermanVct()
+    {
+        // Arrange
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        });
+
+        // Act: a backend fronting the German dc+sd-jwt Registration Certificate — it covers only
+        // vct urn:eudi:pid:de:1, so the generic SD-JWT option is dropped via an empty list.
+        await service.InitializeTransactionAsync(new TransactionOptions
+        {
+            SdJwtOnly          = true,
+            IntendedUseId      = "pos-pid-sdjwt",
+            ResponseMode       = "direct_post.jwt",
+            SdJwtVctValues     = new List<string>(),
+            GermanPidVctValues = new List<string> { "urn:eudi:pid:de:1" },
+        });
+
+        // Assert
+        capturedBody.Should().NotBeNull();
+        capturedBody.Should().Contain("dc+sd-jwt");
+        capturedBody.Should().Contain("urn:eudi:pid:de:1", because: "vct der deutschen PID");
+        capturedBody.Should().Contain("birthdate",
+            because: "die deutsche PID nutzt den OIDC-Claim-Namen 'birthdate'");
+        capturedBody.Should().Contain("pos-pid-sdjwt");
+        capturedBody.Should().NotContain("mso_mdoc",
+            because: "an SD-JWT-only request must not offer the mso_mdoc alternative");
+        capturedBody.Should().NotContain("urn:eudi:pid:1\"",
+            because: "the generic SD-JWT option is outside what the German certificate covers");
+    }
+
+    [Fact]
+    public async Task InitializeTransactionAsync_MdocOnlyAndSdJwtOnly_Throws()
+    {
+        // Arrange
+        var service = CreateService(_ => HttpResponseFactory.Ok("{}"));
+
+        // Act
+        var act = async () => await service.InitializeTransactionAsync(new TransactionOptions
+        {
+            MdocOnly  = true,
+            SdJwtOnly = true,
+        });
+
+        // Assert: the two scoping flags would leave no credential to request at all
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*mutually exclusive*");
+    }
+
+    [Fact]
+    public async Task InitializeTransactionAsync_BlankVctEntry_DropsThatOption()
+    {
+        // Arrange
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        });
+
+        // Act: a single blank entry is what "…__0=" from the environment binds to — .NET
+        // configuration cannot express an empty collection.
+        await service.InitializeTransactionAsync(new TransactionOptions
+        {
+            SdJwtVctValues     = new List<string> { "" },
+            GermanPidVctValues = new List<string> { "urn:eudi:pid:de:1" },
+        });
+
+        // Assert: the generic option is gone, the German one and mso_mdoc remain
+        capturedBody.Should().NotBeNull();
+        capturedBody.Should().Contain("mso_mdoc");
+        capturedBody.Should().Contain("urn:eudi:pid:de:1");
+        capturedBody.Should().NotContain("urn:eudi:pid:1\"",
+            because: "a blank vct entry must switch the generic SD-JWT option off");
+    }
+
+    [Fact]
+    public async Task InitializeTransactionAsync_GermanCombinedCertificate_OffersBothFormats()
+    {
+        // Arrange
+        string? capturedBody = null;
+        var service = CreateService(req =>
+        {
+            capturedBody = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return HttpResponseFactory.Ok("""
+                { "transaction_id": "t1", "client_id": "c1",
+                  "request_uri": "https://x.com/r", "request_uri_method": "post" }
+                """);
+        });
+
+        // Act: the "de" backend as configured against the combined Registration Certificate —
+        // both formats as either/or, the generic EU SD-JWT option dropped (not covered by it).
+        await service.InitializeTransactionAsync(new TransactionOptions
+        {
+            IntendedUseId      = "pos-pid",
+            ResponseMode       = "direct_post.jwt",
+            SdJwtVctValues     = new List<string> { "" },
+            GermanPidVctValues = new List<string> { "urn:eudi:pid:de:1" },
+            PidClaims = new List<string>
+            {
+                "family_name", "given_name", "birth_date", "place_of_birth",
+                "nationality", "issuing_authority", "issuing_country",
+            },
+        });
+
+        // Assert
+        capturedBody.Should().NotBeNull();
+        capturedBody.Should().Contain("mso_mdoc").And.Contain("dc+sd-jwt",
+            because: "the combined certificate covers both formats");
+        capturedBody.Should().Contain("urn:eudi:pid:de:1");
+        capturedBody.Should().NotContain("urn:eudi:pid:1\"",
+            because: "the generic SD-JWT option is not covered by the German certificate");
+
+        // mso_mdoc spelling
+        capturedBody.Should().Contain("birth_date").And.Contain("nationality");
+        // SD-JWT spelling, translated from the same canonical list
+        capturedBody.Should().Contain("birthdate").And.Contain("nationalities");
+        // attributes shared by both spellings
+        capturedBody.Should().Contain("place_of_birth")
+            .And.Contain("issuing_authority").And.Contain("issuing_country");
+    }
+
+    [Fact]
+    public void GermanPidVctValues_Default_ContainsDocumentedIdentifier()
+    {
+        // The BMI developer guide documents urn:eudi:pid:de:1 as the German PID's vct; the
+        // Bundesdruckerei URL is the older prototype value kept for tolerance.
+        new VerifierSettings().GermanPidVctValues.Should()
+            .Contain("urn:eudi:pid:de:1").And
+            .Contain("https://demo.pid-issuer.bundesdruckerei.de/credentials/pid/1.0");
+    }
+
+    [Fact]
     public async Task InitializeTransactionAsync_SendsConfiguredIntendedUseId_WhenTransactionHasNone()
     {
         // Arrange: settings carry the fallback, the transaction does not

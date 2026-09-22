@@ -76,10 +76,18 @@ miEUDIverifier.Models.TransactionOptions OptionsFor(string? backend) => new()
 {
     MdocOnly = backend is not null
         && settings.MdocOnlyBackends.Contains(backend, StringComparer.OrdinalIgnoreCase),
+    SdJwtOnly = backend is not null
+        && settings.SdJwtOnlyBackends.Contains(backend, StringComparer.OrdinalIgnoreCase),
     IntendedUseId = backend is not null
         && settings.IntendedUseIds.TryGetValue(backend, out var id) ? id : null,
     ResponseMode = backend is not null
         && settings.ResponseModes.TryGetValue(backend, out var rm) ? rm : null,
+    PidClaims = backend is not null
+        && settings.PidClaimsByBackend.TryGetValue(backend, out var claims) ? claims : null,
+    SdJwtVctValues = backend is not null
+        && settings.SdJwtVctValuesByBackend.TryGetValue(backend, out var sdVcts) ? sdVcts : null,
+    GermanPidVctValues = backend is not null
+        && settings.GermanPidVctValuesByBackend.TryGetValue(backend, out var deVcts) ? deVcts : null,
 };
 
 // ── Local helper functions ────────────────────────────────────────────────────

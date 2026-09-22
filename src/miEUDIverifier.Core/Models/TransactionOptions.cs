@@ -14,6 +14,32 @@ public class TransactionOptions
     public bool MdocOnly { get; set; }
 
     /// <summary>
+    /// When true, only the SD-JWT VC PID credential is requested (no mso_mdoc alternative).
+    /// The mirror image of <see cref="MdocOnly"/>, for backends scoped to a <c>dc+sd-jwt</c>
+    /// Registration Certificate. Setting both at once is a configuration error and throws.
+    /// </summary>
+    public bool SdJwtOnly { get; set; }
+
+    /// <summary>
+    /// Optional PID attributes to request, in mso_mdoc spelling. Falls back to the configured
+    /// values when null.
+    /// </summary>
+    public List<string>? PidClaims { get; set; }
+
+    /// <summary>
+    /// Optional accepted vct values for the generic SD-JWT VC PID option. Falls back to the
+    /// configured values when null; an empty list drops the option from the request.
+    /// </summary>
+    public List<string>? SdJwtVctValues { get; set; }
+
+    /// <summary>
+    /// Optional accepted vct values for the German PID option. Falls back to the configured
+    /// values when null; an empty list drops the option from the request. A backend fronting a Registration Certificate must request exactly the
+    /// vct values that certificate covers.
+    /// </summary>
+    public List<string>? GermanPidVctValues { get; set; }
+
+    /// <summary>
     /// Optional Wallet Relying Party Intended Use id configured on the backend. Passed as
     /// <c>intended_use_id</c> so the backend attaches the matching Registration Certificate.
     /// </summary>
