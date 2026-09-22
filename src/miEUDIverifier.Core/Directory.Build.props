@@ -28,6 +28,11 @@ configuration cannot express an empty collection through environment variables.
 GermanPidVctValues now also lists urn:eudi:pid:de:1, the identifier the German developer guide
 documents for the German PID; the Bundesdruckerei prototype value is kept alongside it.
 IdentityData gained PlaceOfBirth, Nationality, IssuingAuthority and IssuingCountry.
+SD-JWT VC disclosures are now resolved properly: an object hiding properties behind its own _sd
+and an array hiding elements as {"...": digest} are both resolved recursively, matched by the
+disclosure digest and honouring _sd_alg. Earlier versions only applied flat [salt, name, value]
+disclosures, so a nested place of birth and the nationalities array came through as raw
+placeholders. A disclosure the payload never references is still applied by name, as before.
 Behaviour change worth noting: claim values that are arrays or objects are no longer dropped
 silently — arrays are joined with ", " and objects kept as raw JSON, so AdditionalClaims can now
 contain entries that earlier versions discarded.

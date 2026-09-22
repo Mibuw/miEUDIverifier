@@ -560,6 +560,70 @@ public class VerifierApiServiceTests
     }
 
     [Fact]
+    public async Task ExtractIdentityDataAsync_ResolvesNestedAndArrayDisclosures()
+    {
+        // Arrange: the German PID as the wallet actually presents it — place_of_birth is a nested
+        // object hiding its locality behind its own _sd, and nationalities hides array elements as
+        // {"...": digest}. A flat pass leaves both as raw placeholders.
+        static string B64Url(byte[] b) =>
+            Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        static string Disc(params object[] parts) =>
+            B64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(parts)));
+        static string Digest(string disclosure) =>
+            B64Url(System.Security.Cryptography.SHA256.HashData(Encoding.ASCII.GetBytes(disclosure)));
+
+        var dFamily = Disc("s1", "family_name", "MUSTERMANN");
+        var dGiven  = Disc("s2", "given_name",  "ERIKA");
+        var dBirth  = Disc("s3", "birthdate",   "1964-08-12");
+        var dLocal  = Disc("s4", "locality",    "BERLIN");   // nested inside place_of_birth
+        var dNat    = Disc("s5", "DE");                       // array element: [salt, value]
+
+        var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["vct"]               = "urn:eudi:pid:de:1",
+            ["issuing_authority"] = "DE",
+            ["issuing_country"]   = "DE",
+            ["place_of_birth"]    = new Dictionary<string, object>
+            {
+                ["_sd"] = new[] { Digest(dLocal) },
+            },
+            ["nationalities"] = new object[]
+            {
+                new Dictionary<string, string> { ["..."] = Digest(dNat) },
+            },
+            ["_sd"] = new[] { Digest(dFamily), Digest(dGiven), Digest(dBirth) },
+        });
+
+        var header = B64Url(Encoding.UTF8.GetBytes("""{"alg":"ES256","typ":"dc+sd-jwt"}"""));
+        var sdJwt  = $"{header}.{B64Url(Encoding.UTF8.GetBytes(payloadJson))}.sig"
+                   + "~" + dFamily + "~" + dGiven + "~" + dBirth + "~" + dLocal + "~" + dNat + "~";
+
+        using var doc = JsonDocument.Parse(
+            JsonSerializer.Serialize(new Dictionary<string, string> { ["pid-sdjwt-de"] = sdJwt }));
+        var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
+        var service = CreateService(_ =>
+            throw new InvalidOperationException("No HTTP call expected for SD-JWT parsing"));
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.FamilyName.Should().Be("MUSTERMANN");
+        identity.GivenName.Should().Be("ERIKA");
+        identity.BirthDate.Should().Be("1964-08-12");
+        identity.PlaceOfBirth.Should().Be("BERLIN",
+            because: "the locality hidden behind the nested _sd must be resolved");
+        identity.Nationality.Should().Be("DE",
+            because: "an array element hidden as {\"...\": digest} must be resolved");
+        identity.IssuingAuthority.Should().Be("DE");
+        identity.IssuingCountry.Should().Be("DE");
+
+        // No placeholder may survive into the output
+        identity.PlaceOfBirth.Should().NotContain("_sd");
+        identity.Nationality.Should().NotContain("...");
+    }
+
+    [Fact]
     public async Task ExtractIdentityDataAsync_ReturnsIncompleteIdentity_WhenVpTokenIsEmpty()
     {
         // Arrange
