@@ -3,7 +3,7 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>1.2.0</VersionPrefix>
+    <VersionPrefix>1.3.0</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
     <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Builds the DCQL request (mso_mdoc and SD-JWT VC), polls for the wallet response and extracts the identity data, including SD-JWT disclosure parsing.</Description>
@@ -14,6 +14,24 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+1.3.0 — Request a wider PID attribute set, and scope a request to what a Registration
+Certificate covers.
+New VerifierSettings.PidClaims / PidClaimsByBackend select the PID attributes to request, given in
+mso_mdoc spelling; the SD-JWT VC options translate the two names that differ there (birth_date →
+birthdate, nationality → nationalities). The default stays at family name, given name and birth
+date, so existing configuration is unaffected.
+New SdJwtOnlyBackends and TransactionOptions.SdJwtOnly mirror MdocOnly / MdocOnlyBackends for a
+backend scoped to an SD-JWT VC certificate; setting both at once throws. New
+SdJwtVctValuesByBackend and GermanPidVctValuesByBackend give per-backend vct lists, mirroring how
+IntendedUseIds backs IntendedUseId. A blank entry drops that credential option, since .NET
+configuration cannot express an empty collection through environment variables.
+GermanPidVctValues now also lists urn:eudi:pid:de:1, the identifier the German developer guide
+documents for the German PID; the Bundesdruckerei prototype value is kept alongside it.
+IdentityData gained PlaceOfBirth, Nationality, IssuingAuthority and IssuingCountry.
+Behaviour change worth noting: claim values that are arrays or objects are no longer dropped
+silently — arrays are joined with ", " and objects kept as raw JSON, so AdditionalClaims can now
+contain entries that earlier versions discarded.
+
 1.2.0 — Fixes two defaults that made the library unusable out of the box.
 BackendUrl now points at https://verifier-backend.eudiw.dev (the REST API). It previously
 defaulted to https://verifier.eudiw.dev, which serves the Angular demo UI and answers the API
