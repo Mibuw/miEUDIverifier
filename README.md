@@ -43,19 +43,35 @@ in the wallet as the same unhelpful `Could not trust certificate chain`.
 
 ---
 
-This verifier reads **only the PID credential** (Personal Identification Data) and only the
-following three attributes:
+This verifier reads **only the PID credential** (Personal Identification Data). Which attributes it
+asks for is configuration, not code: `PidClaims` sets the default and `PidClaimsByBackend` overrides
+it per backend. Attributes are given in **mso_mdoc spelling** and translated for SD-JWT VC, where
+two of them differ.
 
-| Field | DCQL path (mso_mdoc) | DCQL path (sd-jwt) |
-|-------|----------------------|--------------------|
-| Family name | `eu.europa.ec.eudi.pid.1 / family_name` | `family_name` |
-| Given name | `eu.europa.ec.eudi.pid.1 / given_name` | `given_name` |
-| Date of birth | `eu.europa.ec.eudi.pid.1 / birth_date` | `birth_date` |
+The default is the three basic attributes. The German path (`de`) is configured for seven, which is
+what its Registration Certificate covers:
 
-> **Note:** The application can of course be extended to request **more attributes** (or other
-> credential types). The requested claims are defined in the DCQL query built in
-> [`VerifierApiService`](src/miEUDIverifier.Core/Services/VerifierApiService.cs) – just add the
-> desired paths there and map the returned values in `ExtractIdentityDataAsync`.
+| Attribute | mso_mdoc (`eu.europa.ec.eudi.pid.1`) | SD-JWT VC (`urn:eudi:pid:de:1`) | Default |
+|-----------|--------------------------------------|----------------------------------|:-------:|
+| Family name | `family_name` | `family_name` | ✅ |
+| Given name | `given_name` | `given_name` | ✅ |
+| Date of birth | `birth_date` | `birthdate` | ✅ |
+| Place of birth | `place_of_birth` | `place_of_birth` | |
+| Nationality | `nationality` | `nationalities` | |
+| Issuing authority | `issuing_authority` | `issuing_authority` | |
+| Issuing country | `issuing_country` | `issuing_country` | |
+
+The extracted values land on `IdentityData`; anything returned beyond the mapped fields is kept in
+`AdditionalClaims`.
+
+> **Asking for more.** Add the attribute to `PidClaimsByBackend` — no rebuild needed. Two limits
+> apply. A backend fronting a Registration Certificate may not request more than that certificate
+> covers, or the wallet aborts; widening the request means a new certificate from the registrar.
+> And the German PID does not carry every attribute the EU specification defines — the portrait,
+> document number, sex, e-mail, phone number and expiry date are **not** included. Attributes
+> without a mapped `IdentityData` field arrive in `AdditionalClaims`; to give one a typed field of
+> its own, extend the mapping in
+> [`VerifierApiService`](src/miEUDIverifier.Core/Services/VerifierApiService.cs).
 
 ## Flow (Cross-Device)
 
