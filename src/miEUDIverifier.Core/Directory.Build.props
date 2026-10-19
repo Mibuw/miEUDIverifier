@@ -3,7 +3,7 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>1.3.0</VersionPrefix>
+    <VersionPrefix>1.4.0</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
     <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Builds the DCQL request (mso_mdoc and SD-JWT VC), polls for the wallet response and extracts the identity data, including SD-JWT disclosure parsing.</Description>
@@ -14,6 +14,26 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+1.4.0 — Security: check the credential type of a presentation before trusting it.
+Reported by Vitor Fonte, University of Minho.
+The library relied on the verifier backend to bind the returned credential to the requested type
+and did not re-check that binding. It took any claim named family_name, given_name or birth_date
+from any namespace of the response, so a credential whose docType or vct was not the requested PID
+type could be reported as a complete, verified identity.
+Three changes. Every presentation is now checked against the types the transaction requested —
+docType for mso_mdoc, vct for SD-JWT VC — before any attribute is read; this covers all three
+response shapes, including documents decoded through the backend utility endpoint. Typed identity
+fields are taken only from the PID namespace, so other namespaces — including the German extension
+namespace, which shares the docType — contribute to AdditionalClaims alone. Identity data comes
+from a single credential and is no longer combined across the credentials of one response.
+New overload ExtractIdentityDataAsync(envelope, options, ct): pass the TransactionOptions the
+transaction was started with, so the expected types match what was asked for. The existing
+two-argument overload still works and falls back to the configured defaults.
+IdentityData gained CredentialType, carrying the docType or vct the data actually came from.
+Behaviour change worth noting: a response whose credential type cannot be established is now
+rejected where earlier versions would have returned an identity. Every rejection is logged with
+the type found and the types expected.
+
 1.3.0 — Request a wider PID attribute set, and scope a request to what a Registration
 Certificate covers.
 New VerifierSettings.PidClaims / PidClaimsByBackend select the PID attributes to request, given in

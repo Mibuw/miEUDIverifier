@@ -110,6 +110,13 @@ public class IdentityData
     /// <summary>Source credential format ("mso_mdoc" or "dc+sd-jwt").</summary>
     public string? CredentialFormat { get; set; }
 
+    /// <summary>
+    /// The credential type the data actually came from — docType for mso_mdoc, vct for SD-JWT VC.
+    /// Set only after the type was matched against what the transaction requested, so a populated
+    /// value means the attributes stem from a credential of the expected type.
+    /// </summary>
+    public string? CredentialType { get; set; }
+
     /// <summary>Additional claims that were returned beyond the three requested.</summary>
     public Dictionary<string, string> AdditionalClaims { get; set; } = new();
 

@@ -156,7 +156,9 @@ void StartPolling(AppState state, VerifierApiService verifier, CancellationToken
                 onRawResponse: raw => state.LastRawResponse = raw,
                 ct: cts.Token);
 
-            var identity = await verifier.ExtractIdentityDataAsync(envelope, cts.Token);
+            // Die Optionen der Transaktion mitgeben, damit die erwarteten Credential-Typen
+            // denen der Anfrage entsprechen.
+            var identity = await verifier.ExtractIdentityDataAsync(envelope, OptionsFor(state.Backend), cts.Token);
 
             state.Identity = identity;
             state.Status   = identity.IsComplete ? "complete" : "partial";
