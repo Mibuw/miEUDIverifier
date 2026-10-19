@@ -269,70 +269,156 @@ public class VerifierApiService
     ///      → decoded via the backend's utility endpoint
     ///   C) vp_token is a JWT string (SD-JWT)
     /// </summary>
+    /// <summary>
+    /// Credential types a response may legitimately carry, derived from the same configuration
+    /// that built the request. A presentation whose type does not match is not evidence of the
+    /// requested credential, however well-formed it is.
+    /// </summary>
+    private sealed class ExpectedTypes
+    {
+        public string DocType { get; init; } = PidNamespace;
+        public IReadOnlyCollection<string> VctValues { get; init; } = Array.Empty<string>();
+
+        public bool MatchesDocType(string? docType) =>
+            !string.IsNullOrEmpty(docType) && string.Equals(docType, DocType, StringComparison.Ordinal);
+
+        public bool MatchesVct(string? vct) =>
+            !string.IsNullOrEmpty(vct) && VctValues.Contains(vct, StringComparer.Ordinal);
+
+        public string Describe() => "docType=" + DocType + ", vct=[" + string.Join(", ", VctValues) + "]";
+    }
+
+    private ExpectedTypes ExpectedFor(TransactionOptions? options)
+    {
+        var vcts = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var v in UsableVctValues(options?.SdJwtVctValues ?? _settings.SdJwtVctValues))
+            vcts.Add(v);
+        foreach (var v in UsableVctValues(options?.GermanPidVctValues ?? _settings.GermanPidVctValues))
+            vcts.Add(v);
+        return new ExpectedTypes { VctValues = vcts };
+    }
+
+    private void LogTypeMismatch(string? format, string? actual, ExpectedTypes expected) =>
+        _logger.LogWarning(
+            "Discarding presentation: format {Format} reported type {Actual}, which is not among the requested types ({Expected}).",
+            format ?? "(none)", actual ?? "(none)", expected.Describe());
+
+    /// <summary>Reads the "vct" claim of a decoded SD-JWT VC payload, if present.</summary>
+    private static string? ReadVct(JsonElement attributes) =>
+        attributes.ValueKind == JsonValueKind.Object
+        && attributes.TryGetProperty("vct", out var vct)
+        && vct.ValueKind == JsonValueKind.String
+            ? vct.GetString()
+            : null;
+
+    public Task<IdentityData> ExtractIdentityDataAsync(
+        WalletResponseEnvelope envelope,
+        CancellationToken ct = default) =>
+        ExtractIdentityDataAsync(envelope, null, ct);
+
+    /// <summary>
+    /// Extracts the identity data from a wallet response.
+    /// <para>
+    /// Every presentation is checked against the credential types that were requested — the
+    /// backend's verdict alone is not treated as sufficient. Identity data is taken from a single
+    /// matching credential; attributes are never combined across credentials.
+    /// </para>
+    /// </summary>
+    /// <param name="envelope">The wallet response as returned by the verifier backend.</param>
+    /// <param name="options">
+    /// The options the transaction was started with, so the expected types match what was asked
+    /// for. When null, the configured defaults apply.
+    /// </param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<IdentityData> ExtractIdentityDataAsync(
         WalletResponseEnvelope envelope,
+        TransactionOptions? options,
         CancellationToken ct = default)
     {
-        var identity = new IdentityData();
+        var expected = ExpectedFor(options);
 
         // A) Credentials already decoded by the backend
         if (envelope.Credentials != null && envelope.Credentials.Count > 0)
         {
+            IdentityData? firstAccepted = null;
+
             foreach (var cred in envelope.Credentials)
             {
-                identity.CredentialFormat = cred.Format;
                 if (cred.Attributes is null) continue;
 
-                if (cred.Format == "mso_mdoc")
-                    ExtractFromMdoc(cred.Attributes.Value, identity);
-                else
-                    ExtractFromSdJwt(cred.Attributes.Value, identity);
+                // Each credential is evaluated on its own, so a complete identity can never be
+                // assembled from the attributes of two different presentations.
+                var candidate = new IdentityData { CredentialFormat = cred.Format };
 
-                if (identity.IsComplete) break;
+                if (cred.Format == "mso_mdoc")
+                {
+                    if (!expected.MatchesDocType(cred.DocType))
+                    {
+                        LogTypeMismatch(cred.Format, cred.DocType, expected);
+                        continue;
+                    }
+                    candidate.CredentialType = cred.DocType;
+                    ExtractFromMdoc(cred.Attributes.Value, candidate);
+                }
+                else
+                {
+                    var vct = ReadVct(cred.Attributes.Value);
+                    if (!expected.MatchesVct(vct))
+                    {
+                        LogTypeMismatch(cred.Format, vct, expected);
+                        continue;
+                    }
+                    candidate.CredentialType = vct;
+                    ExtractFromSdJwt(cred.Attributes.Value, candidate);
+                }
+
+                if (candidate.IsComplete) return candidate;
+                firstAccepted ??= candidate;
             }
-            return identity;
+
+            return firstAccepted ?? new IdentityData();
         }
 
-        if (!envelope.VpToken.HasValue) return identity;
+        if (!envelope.VpToken.HasValue) return new IdentityData();
         var vpToken = envelope.VpToken.Value;
 
         // B) vp_token = { "credential-id": ["base64url-CBOR-DeviceResponse", ...] }
         if (vpToken.ValueKind == JsonValueKind.Object)
-        {
-            identity = await DecodeVpTokenObjectAsync(vpToken, ct);
-            return identity;
-        }
+            return await DecodeVpTokenObjectAsync(vpToken, expected, ct);
 
         // C) vp_token = SD-JWT VC presentation string
         if (vpToken.ValueKind == JsonValueKind.String)
         {
             var sdJwt = vpToken.GetString();
             if (!string.IsNullOrEmpty(sdJwt))
-                ExtractFromSdJwtString(sdJwt, identity);
+                return ExtractFromSdJwtString(sdJwt, expected) ?? new IdentityData();
         }
 
-        return identity;
+        return new IdentityData();
     }
 
-    // ── B) Decode CBOR mDoc via the utility endpoint ──────────────────────────
+    // ── B) Decode CBOR mDoc via the utility endpoint ──────────
 
     private async Task<IdentityData> DecodeVpTokenObjectAsync(
         JsonElement vpToken,
+        ExpectedTypes expected,
         CancellationToken ct)
     {
-        var identity = new IdentityData();
+        IdentityData? firstAccepted = null;
 
         foreach (var cred in vpToken.EnumerateObject())
         {
             var value = cred.Value;
 
-            // SD-JWT VC: the presentation is a single string "<jwt>~<disclosure>~…"
+            // SD-JWT VC: the presentation is a single string "<jwt>~<disclosure>~..."
             if (value.ValueKind == JsonValueKind.String)
             {
                 var sdJwt = value.GetString();
-                if (!string.IsNullOrEmpty(sdJwt))
-                    ExtractFromSdJwtString(sdJwt, identity);
-                if (identity.IsComplete) break;
+                if (string.IsNullOrEmpty(sdJwt)) continue;
+                var single = ExtractFromSdJwtString(sdJwt, expected);
+                if (single is null) continue;
+                if (single.IsComplete) return single;
+                firstAccepted ??= single;
                 continue;
             }
 
@@ -346,23 +432,25 @@ public class VerifierApiService
 
                 // Heuristic: an SD-JWT contains '.' (JWT) and/or '~' (disclosures);
                 // an mso_mdoc DeviceResponse is base64url-encoded CBOR (neither).
-                if (presentation.Contains('~') || presentation.Contains('.'))
-                    ExtractFromSdJwtString(presentation, identity);
-                else
-                    await DecodeMdocDeviceResponseAsync(presentation, identity, ct);
+                var candidate = presentation.Contains('~') || presentation.Contains('.')
+                    ? ExtractFromSdJwtString(presentation, expected)
+                    : await DecodeMdocDeviceResponseAsync(presentation, expected, ct);
 
-                if (identity.IsComplete) break;
+                if (candidate is null) continue;
+                if (candidate.IsComplete) return candidate;
+                firstAccepted ??= candidate;
             }
-
-            if (identity.IsComplete) break;
         }
 
-        return identity;
+        return firstAccepted ?? new IdentityData();
     }
 
-    // Decode a single base64url-CBOR mso_mdoc DeviceResponse via the backend utility endpoint.
-    private async Task DecodeMdocDeviceResponseAsync(
-        string deviceResponse, IdentityData identity, CancellationToken ct)
+    /// <summary>
+    /// Decodes an mso_mdoc DeviceResponse through the backend's utility endpoint. Returns null
+    /// when it carries no document of the requested docType.
+    /// </summary>
+    private async Task<IdentityData?> DecodeMdocDeviceResponseAsync(
+        string deviceResponse, ExpectedTypes expected, CancellationToken ct)
     {
         try
         {
@@ -381,23 +469,42 @@ public class VerifierApiService
             if (!httpResp.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Utility endpoint failed: {Body}", json);
-                return;
+                return null;
             }
 
             // Response format: [{ "docType": "...", "attributes": { "ns": { "field": value } } }]
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return null;
 
-            identity.CredentialFormat = "mso_mdoc";
+            IdentityData? firstAccepted = null;
             foreach (var docEl in doc.RootElement.EnumerateArray())
             {
-                if (docEl.TryGetProperty("attributes", out var attrs))
-                    ExtractFromMdoc(attrs, identity);
+                var docType = docEl.TryGetProperty("docType", out var dt) && dt.ValueKind == JsonValueKind.String
+                    ? dt.GetString()
+                    : null;
+
+                if (!expected.MatchesDocType(docType))
+                {
+                    LogTypeMismatch("mso_mdoc", docType, expected);
+                    continue;
+                }
+                if (!docEl.TryGetProperty("attributes", out var attrs)) continue;
+
+                var candidate = new IdentityData
+                {
+                    CredentialFormat = "mso_mdoc",
+                    CredentialType = docType,
+                };
+                ExtractFromMdoc(attrs, candidate);
+                if (candidate.IsComplete) return candidate;
+                firstAccepted ??= candidate;
             }
+            return firstAccepted;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to decode DeviceResponse.");
+            return null;
         }
     }
 
@@ -409,6 +516,21 @@ public class VerifierApiService
         foreach (var ns in attributes.EnumerateObject())
         {
             if (ns.Value.ValueKind != JsonValueKind.Object) continue;
+
+            // Only the PID namespace may populate the typed identity fields. Any other namespace —
+            // including the German extension namespace eu.europa.ec.eudi.pid.de.1, which shares the
+            // docType — contributes to AdditionalClaims alone. Without this, a claim merely *named*
+            // family_name anywhere in the response would be read as the PID family name.
+            if (!string.Equals(ns.Name, PidNamespace, StringComparison.Ordinal))
+            {
+                foreach (var other in ns.Value.EnumerateObject())
+                {
+                    var ov = GetStringValue(other.Value);
+                    if (ov != null) identity.AdditionalClaims[ns.Name + "/" + other.Name] = ov;
+                }
+                continue;
+            }
+
             foreach (var claim in ns.Value.EnumerateObject())
             {
                 switch (claim.Name)
@@ -468,9 +590,13 @@ public class VerifierApiService
     /// Plaintext claims in the issuer JWT payload as well as the selectively disclosed
     /// values (carried in the base64url-encoded disclosures) are extracted.
     /// </summary>
-    private void ExtractFromSdJwtString(string sdJwt, IdentityData identity)
+    /// <summary>
+    /// Parses an SD-JWT VC presentation and returns the identity it carries, or null when its
+    /// vct is not one of the requested types.
+    /// </summary>
+    private IdentityData? ExtractFromSdJwtString(string sdJwt, ExpectedTypes expected)
     {
-        identity.CredentialFormat ??= _settings.SdJwtFormat;
+        var identity = new IdentityData { CredentialFormat = _settings.SdJwtFormat };
         var segments = sdJwt.Split('~');
 
         // Disclosures are the segments after the issuer JWT. The trailing one may be a
@@ -483,7 +609,7 @@ public class VerifierApiService
         }
 
         var jwtParts = segments[0].Split('.');
-        if (jwtParts.Length < 2) return;
+        if (jwtParts.Length < 2) return null;
 
         JsonNode? payload;
         try
@@ -493,9 +619,19 @@ public class VerifierApiService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to parse SD-JWT issuer payload.");
-            return;
+            return null;
         }
-        if (payload is not JsonObject payloadObject) return;
+        if (payload is not JsonObject payloadObject) return null;
+
+        // The vct states what this credential claims to be. It is read before any attribute is
+        // taken, so a credential of an unrequested type never reaches the identity result.
+        var vct = payloadObject["vct"]?.GetValue<string>();
+        if (!expected.MatchesVct(vct))
+        {
+            LogTypeMismatch(_settings.SdJwtFormat, vct, expected);
+            return null;
+        }
+        identity.CredentialType = vct;
 
         // Map each disclosure by its digest, so _sd entries and array elements can be resolved.
         var hashAlgorithm = payloadObject["_sd_alg"]?.GetValue<string>() ?? "sha-256";
@@ -535,6 +671,8 @@ public class VerifierApiService
             using var doc = JsonDocument.Parse(arr.ToJsonString());
             ApplySdJwtClaim(doc.RootElement[1].GetString(), doc.RootElement[2], identity);
         }
+
+        return identity;
     }
 
     /// <summary>

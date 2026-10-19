@@ -402,7 +402,7 @@ public class VerifierApiServiceTests
             Status = "submitted",
             Credentials = new List<VerifiedCredential>
             {
-                new() { Format = "mso_mdoc", Attributes = attributes }
+                new() { Format = "mso_mdoc", DocType = "eu.europa.ec.eudi.pid.1", Attributes = attributes }
             }
         };
 
@@ -415,6 +415,209 @@ public class VerifierApiServiceTests
         identity.BirthDate.Should().Be("1976-09-24");
         identity.IsComplete.Should().BeTrue();
         identity.CredentialFormat.Should().Be("mso_mdoc");
+        identity.CredentialType.Should().Be("eu.europa.ec.eudi.pid.1",
+            because: "die Identitaet muss aus einem Credential des angefragten Typs stammen");
+    }
+
+    // ── Typbindung der Antwort (gemeldet von Vítor Fonte) ─────────────────────
+    // Die Anwendung darf sich nicht darauf verlassen, dass das Backend die Bindung zwischen
+    // angefragtem und geliefertem Credential-Typ durchsetzt. Ein Nachweis mit PID-benannten
+    // Claims, aber fremdem Typ, ist kein Identitaetsnachweis.
+
+    private static WalletResponseEnvelope MdocEnvelope(string? docType, string json) =>
+        new()
+        {
+            Status = "submitted",
+            Credentials = new List<VerifiedCredential>
+            {
+                new()
+                {
+                    Format = "mso_mdoc",
+                    DocType = docType,
+                    Attributes = JsonDocument.Parse(json).RootElement,
+                },
+            },
+        };
+
+    private const string PidClaimsJson = """
+        {
+          "eu.europa.ec.eudi.pid.1": {
+            "family_name": "Mitterbucher",
+            "given_name":  "Wolfgang",
+            "birth_date":  "1976-09-24"
+          }
+        }
+        """;
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_RejectsMdoc_WithForeignDocType()
+    {
+        // Arrange: PID-benannte Claims, aber der Nachweis ist keine PID
+        var service = CreateService(_ => HttpResponseFactory.NotFound());
+        var envelope = MdocEnvelope("com.example.loyalty.1", """
+            {
+              "com.example.loyalty.1": {
+                "family_name": "Angreifer",
+                "given_name":  "Anna",
+                "birth_date":  "1990-01-01"
+              }
+            }
+            """);
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "ein fremder docType darf nicht als PID durchgehen");
+        identity.FamilyName.Should().BeNull();
+        identity.GivenName.Should().BeNull();
+        identity.BirthDate.Should().BeNull();
+        identity.CredentialType.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_RejectsMdoc_WithoutDocType()
+    {
+        // Arrange: ohne Typangabe laesst sich der Nachweis nicht einordnen
+        var service = CreateService(_ => HttpResponseFactory.NotFound());
+        var envelope = MdocEnvelope(null, PidClaimsJson);
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "ein Nachweis ohne docType ist kein nachweislich passender Nachweis");
+        identity.FamilyName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_IgnoresPidNamedClaims_InForeignNamespace()
+    {
+        // Arrange: richtiger docType, aber die Claims liegen in einem fremden Namespace
+        var service = CreateService(_ => HttpResponseFactory.NotFound());
+        var envelope = MdocEnvelope("eu.europa.ec.eudi.pid.1", """
+            {
+              "com.example.extra.1": {
+                "family_name": "Angreifer",
+                "given_name":  "Anna",
+                "birth_date":  "1990-01-01"
+              }
+            }
+            """);
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "typisierte Felder duerfen nur aus dem PID-Namespace stammen");
+        identity.FamilyName.Should().BeNull();
+        identity.AdditionalClaims.Should().ContainKey("com.example.extra.1/family_name",
+            because: "fremde Namespaces bleiben als Zusatzinformation erhalten");
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_DoesNotCombineAttributes_AcrossCredentials()
+    {
+        // Arrange: zwei Nachweise, jeder traegt nur einen Teil der Identitaet
+        var service = CreateService(_ => HttpResponseFactory.NotFound());
+        var envelope = new WalletResponseEnvelope
+        {
+            Status = "submitted",
+            Credentials = new List<VerifiedCredential>
+            {
+                new()
+                {
+                    Format = "mso_mdoc",
+                    DocType = "eu.europa.ec.eudi.pid.1",
+                    Attributes = JsonDocument.Parse("""
+                        { "eu.europa.ec.eudi.pid.1": { "family_name": "Mitterbucher" } }
+                        """).RootElement,
+                },
+                new()
+                {
+                    Format = "mso_mdoc",
+                    DocType = "eu.europa.ec.eudi.pid.1",
+                    Attributes = JsonDocument.Parse("""
+                        { "eu.europa.ec.eudi.pid.1": { "given_name": "Wolfgang", "birth_date": "1976-09-24" } }
+                        """).RootElement,
+                },
+            },
+        };
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "eine Identitaet darf nicht aus mehreren Nachweisen zusammengesetzt werden");
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_RejectsSdJwt_WithForeignVct()
+    {
+        // Arrange: SD-JWT mit PID-benannten Claims, aber fremdem vct
+        static string B64Url(byte[] b) =>
+            Convert.ToBase64String(b).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        static string Disclosure(string name, string value) =>
+            B64Url(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new object[] { "salt", name, value })));
+
+        var header = B64Url(Encoding.UTF8.GetBytes("""{"alg":"ES256","typ":"dc+sd-jwt"}"""));
+        var payload = B64Url(Encoding.UTF8.GetBytes("""{"vct":"https://example.com/loyalty/1.0"}"""));
+        var sdJwt = $"{header}.{payload}.sig"
+                  + "~" + Disclosure("family_name", "Angreifer")
+                  + "~" + Disclosure("given_name",  "Anna")
+                  + "~" + Disclosure("birth_date",  "1990-01-01")
+                  + "~";
+
+        using var doc = JsonDocument.Parse(
+            JsonSerializer.Serialize(new Dictionary<string, string> { ["pid-sdjwt"] = sdJwt }));
+        var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
+        var service = CreateService(_ =>
+            throw new InvalidOperationException("No HTTP call expected for SD-JWT parsing"));
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "ein fremder vct darf nicht als PID durchgehen");
+        identity.FamilyName.Should().BeNull();
+        identity.CredentialType.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ExtractIdentityDataAsync_RejectsMdoc_FromUtilityEndpoint_WithForeignDocType()
+    {
+        // Arrange: der Utility-Endpunkt liefert einen Nachweis fremden Typs zurueck
+        var service = CreateService(req =>
+            req.RequestUri!.PathAndQuery.Contains("deviceResponse")
+                ? HttpResponseFactory.Ok("""
+                    [{
+                      "docType": "com.example.loyalty.1",
+                      "attributes": {
+                        "com.example.loyalty.1": {
+                          "family_name": "Angreifer",
+                          "given_name":  "Anna",
+                          "birth_date":  "1990-01-01"
+                        }
+                      }
+                    }]
+                    """)
+                : HttpResponseFactory.NotFound());
+
+        using var doc = JsonDocument.Parse("""{"cred-id-mdoc": ["dGVzdA=="]}""");
+        var envelope = new WalletResponseEnvelope { VpToken = doc.RootElement };
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "auch der dekodierte DeviceResponse muss gegen den angefragten docType geprueft werden");
+        identity.FamilyName.Should().BeNull();
     }
 
     [Fact]
