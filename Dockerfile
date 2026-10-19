@@ -22,8 +22,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish ./
 
-# Kestrel binds to http://0.0.0.0:5050 as configured in appsettings.json
+# appsettings.json binds to loopback only, which is the safe default for a local run.
+# A container has to be reachable from the reverse proxy, so the binding is widened here.
+# Kestrel endpoints take precedence over ASPNETCORE_URLS, so this is the knob that works.
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV Kestrel__Endpoints__Http__Url=http://0.0.0.0:5050
 EXPOSE 5050
 
 ENTRYPOINT ["dotnet", "miEUDIverifier.dll"]

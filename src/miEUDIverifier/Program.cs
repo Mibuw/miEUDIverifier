@@ -438,7 +438,10 @@ var localHttps = httpsUrl?.Replace("0.0.0.0", "localhost");
 
 Console.WriteLine($"  HTTP       : {localHttp}");
 if (localHttps != null) Console.WriteLine($"  HTTPS      : {localHttps}");
-if (lanIp != null)
+// Only advertise a LAN address when the binding actually covers all interfaces.
+var listensOnAllInterfaces = httpUrl.Contains("0.0.0.0") || httpUrl.Contains("://+:")
+                          || httpUrl.Contains("://*:");
+if (lanIp != null && listensOnAllInterfaces)
 {
     Console.WriteLine($"  LAN HTTP   : {httpUrl.Replace("0.0.0.0",  lanIp)}");
     if (httpsUrl != null)
