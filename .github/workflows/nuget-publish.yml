@@ -50,3 +50,21 @@ jobs:
             --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+      # --skip-duplicate above keeps a re-run from failing, but it also turns a rejected push
+      # into a green job, and a push NuGet accepts can still fail validation afterwards. This
+      # reports whether the version actually became downloadable. It warns rather than fails:
+      # indexing has taken well over half an hour, so a miss here is a prompt to look, not proof
+      # of a broken release.
+      - name: Verify the version is live on NuGet
+        run: |
+          url="https://api.nuget.org/v3-flatcontainer/mieudiverifier.core/index.json"
+          for attempt in $(seq 1 30); do
+            if curl -fsSL "$url" | grep -q "\"$VERSION\""; then
+              echo "miEUDIverifier.Core $VERSION is live on NuGet."
+              exit 0
+            fi
+            echo "Attempt $attempt: $VERSION not indexed yet, waiting 30s."
+            sleep 30
+          done
+          echo "::warning::$VERSION has not appeared on NuGet within 15 minutes. Validation can take longer than that, so this is not necessarily a failure — but if it stays missing, check the validation status at https://www.nuget.org/account/Packages"
