@@ -27,6 +27,7 @@ public static class HtmlPage
             waiting            = t["waiting"],
             received           = t["received"],
             errorPrefix        = t["errorPrefix"],
+            rejected           = t["rejected"],
             unknown            = t["unknown"],
             loading            = t["loading"],
             networkErrorPrefix = t["networkErrorPrefix"],
@@ -156,6 +157,7 @@ public static class HtmlPage
         ["backend_de"]         = "Deutsche Wallet",
         ["received"]           = "Identität empfangen",
         ["errorPrefix"]        = "Fehler: ",
+        ["rejected"]           = "Antwort verworfen \u2013 der Nachweis war nicht vom angefragten Typ.",
         ["unknown"]            = "Unbekannt",
         ["loading"]            = "Lade…",
         ["networkErrorPrefix"] = "Netzwerkfehler: ",
@@ -182,6 +184,7 @@ public static class HtmlPage
         ["backend_de"]         = "German wallet",
         ["received"]           = "Identity received",
         ["errorPrefix"]        = "Error: ",
+        ["rejected"]           = "Response discarded \u2013 the credential was not of the requested type.",
         ["unknown"]            = "Unknown",
         ["loading"]            = "Loading…",
         ["networkErrorPrefix"] = "Network error: ",
@@ -577,6 +580,14 @@ public static class HtmlPage
                   }
                   document.getElementById('result').style.display = 'block';
                   document.getElementById('reset-btn').style.display = 'none';
+
+                } else if (d.status === 'rejected') {
+                  finished = true;
+                  document.getElementById('spinner').style.display = 'none';
+                  const badge = document.getElementById('status-badge');
+                  badge.className = 'status error';
+                  document.getElementById('status-text').textContent = T.rejected;
+                  document.getElementById('reset-btn').style.display = 'inline-block';
 
                 } else if (d.status === 'error') {
                   finished = true;

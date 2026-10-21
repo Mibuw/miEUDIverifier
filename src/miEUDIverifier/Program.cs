@@ -161,9 +161,21 @@ void StartPolling(AppState state, VerifierApiService verifier, CancellationToken
             var identity = await verifier.ExtractIdentityDataAsync(envelope, OptionsFor(state.Backend), cts.Token);
 
             state.Identity = identity;
-            state.Status   = identity.IsComplete ? "complete" : "partial";
 
-            Console.WriteLine($"\n  Identitaet empfangen: {identity.GivenName} {identity.FamilyName}, *{identity.BirthDate}");
+            if (identity.CredentialType is null)
+            {
+                // Nichts uebernommen: die Antwort trug kein Credential des angefragten Typs.
+                // Das von "partial" zu trennen ist der Unterschied zwischen "unvollstaendig
+                // geprueft" und "nichts geprueft".
+                state.Status       = "rejected";
+                state.ErrorMessage = "The wallet response carried no credential of the requested type.";
+                Console.WriteLine("\n  Antwort verworfen: kein Credential des angefragten Typs.");
+            }
+            else
+            {
+                state.Status = identity.IsComplete ? "complete" : "partial";
+                Console.WriteLine($"\n  Identitaet empfangen: {identity.GivenName} {identity.FamilyName}, *{identity.BirthDate}");
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -260,7 +272,8 @@ app.MapGet("/api/status", (HttpContext ctx) =>
         nationality      = state.Identity?.Nationality,
         issuingAuthority = state.Identity?.IssuingAuthority,
         issuingCountry   = state.Identity?.IssuingCountry,
-        format     = state.Identity?.CredentialFormat,
+        format         = state.Identity?.CredentialFormat,
+        credentialType = state.Identity?.CredentialType,
         error      = state.ErrorMessage,
     });
 });
@@ -397,11 +410,13 @@ app.MapGet("/api/verification/{id}/data", (string id) =>
             nationality      = state.Identity.Nationality,
             issuingAuthority = state.Identity.IssuingAuthority,
             issuingCountry   = state.Identity.IssuingCountry,
-            format     = state.Identity.CredentialFormat,
+            format         = state.Identity.CredentialFormat,
+            credentialType = state.Identity.CredentialType,
         });
     }
 
-    // No data yet (waiting) or error → 409 so clients can keep polling
+    // No data yet (waiting), rejected, or error → 409. A rejected presentation is terminal:
+    // the response carried no credential of the requested type, and polling will not change that.
     return Results.Json(new { id, backend = state.Backend, status = state.Status, error = state.ErrorMessage },
         statusCode: 409);
 });

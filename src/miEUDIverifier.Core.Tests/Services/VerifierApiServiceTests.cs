@@ -519,6 +519,33 @@ public class VerifierApiServiceTests
     }
 
     [Fact]
+    public async Task ExtractIdentityDataAsync_IgnoresPidNamedClaims_InGermanExtensionNamespace()
+    {
+        // Arrange: der schaerfere Fall - der deutsche Erweiterungs-Namespace teilt sich den
+        // docType mit der PID, traegt hier aber PID-benannte Claims. Vorgeschlagen von
+        // Vítor Fonte bei der Nachpruefung von 1.4.0.
+        var service = CreateService(_ => HttpResponseFactory.NotFound());
+        var envelope = MdocEnvelope("eu.europa.ec.eudi.pid.1", """
+            {
+              "eu.europa.ec.eudi.pid.de.1": {
+                "family_name": "Angreifer",
+                "given_name":  "Anna",
+                "birth_date":  "1990-01-01"
+              }
+            }
+            """);
+
+        // Act
+        var identity = await service.ExtractIdentityDataAsync(envelope);
+
+        // Assert
+        identity.IsComplete.Should().BeFalse(
+            because: "der Erweiterungs-Namespace darf trotz gleichem docType keine typisierten Felder fuellen");
+        identity.FamilyName.Should().BeNull();
+        identity.AdditionalClaims.Should().ContainKey("eu.europa.ec.eudi.pid.de.1/family_name");
+    }
+
+    [Fact]
     public async Task ExtractIdentityDataAsync_DoesNotCombineAttributes_AcrossCredentials()
     {
         // Arrange: zwei Nachweise, jeder traegt nur einen Teil der Identitaet
