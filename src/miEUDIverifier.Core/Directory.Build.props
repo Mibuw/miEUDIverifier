@@ -3,7 +3,7 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>1.4.0</VersionPrefix>
+    <VersionPrefix>1.4.2</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
     <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Builds the DCQL request (mso_mdoc and SD-JWT VC), polls for the wallet response and extracts the identity data, including SD-JWT disclosure parsing.</Description>
@@ -14,6 +14,17 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+1.4.2 — Make the outcome of the type check visible to callers.
+1.4.0 rejects a presentation whose credential type was not requested, but said so only in the log:
+the result looked like any other incomplete one. IdentityData.CredentialType is now carried through
+the app's JSON responses, and a response from which nothing was accepted is reported as "rejected"
+rather than "partial" — the difference between "verified, some attributes missing" and "nothing
+verified at all". The data endpoint answers 409 for that state instead of 200.
+Library behaviour is unchanged; CredentialType already existed in 1.4.0. Callers that branch on
+the status string should handle the new value.
+With thanks to Vítor Fonte, who noted the endpoint still answered 200 for rejected presentations
+and contributed the regression test for the German PID extension namespace.
+
 1.4.0 — Security: check the credential type of a presentation before trusting it.
 Reported by Vitor Fonte, University of Minho.
 The library relied on the verifier backend to bind the returned credential to the requested type
