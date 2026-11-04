@@ -16,7 +16,7 @@ public class InitTransactionRequest
     public string JarMode { get; set; } = "by_reference";
 
     [JsonPropertyName("request_uri_method")]
-    public string RequestUriMethod { get; set; } = "post";
+    public string RequestUriMethod { get; set; } = "get";
 
     [JsonPropertyName("response_mode")]
     public string ResponseMode { get; set; } = "direct_post";

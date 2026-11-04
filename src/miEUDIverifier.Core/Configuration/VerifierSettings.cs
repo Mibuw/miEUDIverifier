@@ -84,7 +84,7 @@ public class VerifierSettings
     public string JarMode { get; set; } = "by_reference";
 
     /// <summary>HTTP method for request_uri. "post" or "get".</summary>
-    public string RequestUriMethod { get; set; } = "post";
+    public string RequestUriMethod { get; set; } = "get";
 
     /// <summary>Wallet response mode. "direct_post" or "direct_post.jwt".</summary>
     public string ResponseMode { get; set; } = "direct_post";
