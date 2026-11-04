@@ -9,7 +9,7 @@ A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks 
 
 ## ✅ Works with two wallet ecosystems — live and testable
 
-Verified end-to-end on **22 September 2026**: a full presentation completes with **both** the EU
+Verified end-to-end on **4 November 2026**: a full presentation completes with **both** the EU
 reference wallet and the **German EUDI Wallet (EUDIWalletDE, SPRIND sandbox)**. Publicly testable
 examples of the German ecosystem are hard to come by, so both are open here — code, deployment
 templates and the trust analysis behind them.
