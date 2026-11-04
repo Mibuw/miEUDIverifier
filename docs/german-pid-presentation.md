@@ -15,19 +15,19 @@ back empty-handed.
 ## 0. Status — full PID attribute set verified (2026-11-04)
 
 Since **4 November 2026** the `de` backend completes a presentation of all seven PID attributes
-against the d-you wallet (SPRIND sandbox). The verified run went through `dc+sd-jwt`; `mso_mdoc` was
-added to the same request afterwards and matches the registration certificate, but has not yet been
-exercised by a wallet run of its own.
+against the d-you wallet (SPRIND sandbox). The request offers both credential formats as
+alternatives and the wallet picks one per presentation; both have been exercised — `dc+sd-jwt` at
+14:19 UTC, `mso_mdoc` at 14:28.
 
 | | |
 |---|---|
-| Formats offered | `mso_mdoc` (`eu.europa.ec.eudi.pid.1`) and `dc+sd-jwt` (`urn:eudi:pid:de:1`), as `credential_sets` alternatives — the wallet picks one |
-| Format verified | `dc+sd-jwt` |
+| Formats | `mso_mdoc` (`eu.europa.ec.eudi.pid.1`) and `dc+sd-jwt` (`urn:eudi:pid:de:1`), as `credential_sets` alternatives — both verified |
 | Attributes | family name, given name, date of birth, place of birth, nationality, issuing authority, issuing country |
 | JAR delivery | `ByReference`, `request_uri_method=get` |
 | Response mode | `direct_post.jwt` |
 
-The verifier log of the decisive run, with the disclosed values:
+Which format a run used is visible in the VP token key, suffixed `-mdoc` or `-sdjwt-de`. The
+verifier log of the `dc+sd-jwt` run, with the disclosed values:
 
 ```
 14:18:53  Wallet retrieved Request Object - tx: QONqjV3R…

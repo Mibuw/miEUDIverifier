@@ -300,7 +300,8 @@ an SD-JWT VC certificate. `IntendedUseIds` maps a backend to a Wallet-RP Intende
 > **Status:** the public demo completes a presentation with **both** wallets — the EUDI reference
 > wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`. The German path was last
 > re-verified on **4 November 2026** against the d-you wallet, releasing all **seven** PID
-> attributes via `dc+sd-jwt` (`mso_mdoc` is offered alongside it as an alternative). That run also moved the
+> attributes, in separate runs through `dc+sd-jwt` and `mso_mdoc`, which the request offers as
+> alternatives for the wallet to choose from. That day also moved the
 > default to `request_uri_method=get` and required the Registration Certificate to be reissued
 > with one `claim` entry per attribute — a single entry listing several names grants only the
 > first. The German path first completed on **28 July 2026**; the EU path was re-verified on
