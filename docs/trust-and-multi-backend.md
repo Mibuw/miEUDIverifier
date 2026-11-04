@@ -12,6 +12,10 @@ multiple trust ecosystems. It is the reference for the design decisions behind
 > SPRIND sandbox). Therefore multiple wallets require multiple backend instances — which the app
 > now supports through named backends.
 
+Trust is only the first gate. Once a wallet accepts the verifier, a second gate decides which
+**attributes** it will actually release — that is the registration certificate, covered in
+[`german-pid-presentation.md`](german-pid-presentation.md).
+
 ## 0. Status — both ecosystems verified working (2026-07-28)
 
 Since **28 July 2026** the public demo completes a presentation with **both** wallets: the EUDI
@@ -54,7 +58,8 @@ BASE=https://your-verifier.example
 RU=$(curl -s -X POST "$BASE/api/verification?backend=de" \
      | python -c "import sys,json,urllib.parse as u; d=json.load(sys.stdin); \
        print(u.parse_qs(u.urlparse(d['deepLink']).query)['request_uri'][0])")
-curl -s -X POST "$RU" -H "Content-Type: application/x-www-form-urlencoded"
+# request_uri_method=get (the default since 2026-11-04); use -X POST for "post"
+curl -s "$RU"
 ```
 
 A separate, unrelated failure mode seen the same day: the EUDI reference backend rejected a

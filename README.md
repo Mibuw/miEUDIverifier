@@ -36,8 +36,8 @@ serves exactly one ecosystem; the app ties several together through
 
 What the German path requires beyond the EU one — and what it took to get there — is written up in
 [docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md): the `x509_hash` client-id prefix,
-an encrypted response (`direct_post.jwt`), a Registration Certificate for data minimisation, an
-mso_mdoc-only DCQL query, plus the certificate pitfalls (AIA/CRL are signed extensions, and a reused
+an encrypted response (`direct_post.jwt`), a Registration Certificate for data minimisation, a DCQL
+query offering `mso_mdoc` and `dc+sd-jwt` as alternatives, plus the certificate pitfalls (AIA/CRL are signed extensions, and a reused
 key makes old and new certificates share a Subject Key Identifier). All three failure modes surface
 in the wallet as the same unhelpful `Could not trust certificate chain`.
 
@@ -298,15 +298,20 @@ an SD-JWT VC certificate. `IntendedUseIds` maps a backend to a Wallet-RP Intende
 > the switcher.
 >
 > **Status:** the public demo completes a presentation with **both** wallets — the EUDI reference
-> wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`. Both paths were last
-> re-verified on **22 September 2026**, the German one against a single Registration Certificate
-> covering `mso_mdoc` and `dc+sd-jwt` and returning seven PID attributes. The German path first
-> completed on **28 July 2026**; the EU path was re-verified on **24 August 2026** after eudiw.dev
-> began requiring a registration certificate, now sent as `IntendedUseIds__eu="TEST-01"`.
+> wallet via `eu` and the German EUDI Wallet (SPRIND sandbox) via `de`. The German path was last
+> re-verified on **4 November 2026** against the d-you wallet, releasing all **seven** PID
+> attributes via `dc+sd-jwt` (`mso_mdoc` is offered alongside it as an alternative). That run also moved the
+> default to `request_uri_method=get` and required the Registration Certificate to be reissued
+> with one `claim` entry per attribute — a single entry listing several names grants only the
+> first. The German path first completed on **28 July 2026**; the EU path was re-verified on
+> **24 August 2026** after eudiw.dev began requiring a registration certificate, now sent as
+> `IntendedUseIds__eu="TEST-01"`.
 >
 > Full background — trust model, why each wallet does or doesn't work, the SPRIND onboarding path
 > and the multi-backend design — is documented in
-> [docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md).
+> [docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md); what the registration
+> certificate must look like for the wallet to release attributes is in
+> [docs/german-pid-presentation.md](docs/german-pid-presentation.md).
 
 ### Example
 
