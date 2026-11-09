@@ -71,7 +71,20 @@ Scan this with the German EUDI Wallet:
   Deep link: openid4vp://?client_id=…&request_uri=…&request_uri_method=get
 
 Waiting up to 120s (Ctrl+C to stop) …
+
+Complete presentation:
+  Family name       : MUSTERMANN
+  Given name        : ERIKA
+  Date of birth     : 1964-08-12
+  Place of birth    : BERLIN
+  Nationality       : DE
+  Issuing authority : DE
+  Issuing country   : DE
+  Format / type     : mso_mdoc / eu.europa.ec.eudi.pid.1
 ```
+
+The request offers `mso_mdoc` and `dc+sd-jwt` as alternatives and the wallet picks one, so which
+format comes back is its choice, not yours. Both have been verified against the d-you wallet.
 
 ## Three moving parts, and where each one lives
 
