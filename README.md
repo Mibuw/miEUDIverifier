@@ -2,7 +2,9 @@
 
 [![NuGet](https://img.shields.io/nuget/v/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![NuGet downloads](https://img.shields.io/nuget/dt/miEUDIverifier.Core.svg)](https://www.nuget.org/packages/miEUDIverifier.Core/) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Docker on GHCR](https://img.shields.io/badge/GHCR-mibuw%2Fmieudiverifier-2496ED?logo=docker&logoColor=white)](https://github.com/Mibuw/miEUDIverifier/pkgs/container/mieudiverifier) [![Wallets](https://img.shields.io/badge/wallets-EU%20reference%20%7C%20EUDIWalletDE-003399)](#-works-with-two-wallet-ecosystems--live-and-testable)
 
-**Reusable core library on NuGet:** `dotnet add package miEUDIverifier.Core`
+**Reusable core library on NuGet:** `dotnet add package miEUDIverifier.Core` — a runnable
+sample that uses nothing but the package is in [`samples/`](samples/README.md), together with
+where the endpoint, the certificates and the wallet-facing response URL each belong.
 
 A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks to the
 **EUDI Verifier Backend REST API** (OpenID4VP) to read identity data from an EUDI Wallet.
@@ -559,6 +561,9 @@ miEUDIverifier/
 ├── Dockerfile                              # Container build of the web app
 ├── docker/
 │   └── docker-compose.yml                  # Local EUDI verifier backend stack + app
+├── samples/
+│   ├── README.md                            # Endpoint, certificates, response URL
+│   └── ConsoleVerifier/                     # Standalone consumer of the NuGet package
 └── src/
     ├── miEUDIverifier/                      # ASP.NET Core web app (Minimal API)
     │   ├── miEUDIverifier.csproj
