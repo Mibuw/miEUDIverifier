@@ -55,6 +55,8 @@ services:
       # RP Access Certificate keystore (our private key + the SPRIND-issued Access Cert).
       VERIFIER_ACCESS_CERTIFICATE_KEYSTORE: "file:///certs/keystore.p12"
       VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_TYPE: "pkcs12"
+      # DE_KEYSTORE_PASSWORD and DE_REGISTRATION_CERTIFICATE come from docker/.env --
+      # copy docker/.env.example and fill it in. Neither value belongs in this file.
       VERIFIER_ACCESS_CERTIFICATE_KEYSTORE_PASSWORD: "${DE_KEYSTORE_PASSWORD}"
       VERIFIER_ACCESS_CERTIFICATE_ALIAS: "verifier"
       VERIFIER_ACCESS_CERTIFICATE_PASSWORD: "${DE_KEYSTORE_PASSWORD}"
@@ -76,7 +78,7 @@ services:
 
       VERIFIER_RESPONSE_MODE: "DirectPost"
       VERIFIER_REQUESTJWT_EMBED: "ByReference"
-      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Post"
+      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Get"
 
       # Accept the standard EUDI mso_mdoc PID (what the sandbox wallet presents).
       VERIFIER_ATTESTATIONCLASSIFICATIONS: >-

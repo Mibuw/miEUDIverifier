@@ -20,6 +20,10 @@ certs-de/
 *.p12
 # Registration / access certificates dropped into the cert folder (any extension)
 registration-certificate*
+
+# Backend secrets (keystore password, registration certificate).
+# The .env.example template is tracked; a filled-in .env never is.
+.env
 certificate-*.crt
 
 # Local AI/agent tooling state – never belongs in the repository

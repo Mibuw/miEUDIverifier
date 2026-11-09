@@ -37,7 +37,7 @@ services:
 
       VERIFIER_RESPONSE_MODE: "DirectPost"
       VERIFIER_REQUESTJWT_EMBED: "ByReference"
-      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Post"
+      VERIFIER_REQUESTJWT_REQUESTURIMETHOD: "Get"
 
       # Accept all issuers (development only – do not use in production!)
       VERIFIER_ATTESTATIONCLASSIFICATIONS: >-
