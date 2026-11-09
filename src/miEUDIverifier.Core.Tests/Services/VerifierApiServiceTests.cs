@@ -6,6 +6,7 @@ using miEUDIverifier.Models;
 using miEUDIverifier.Services;
 using miEUDIverifier.Tests.Helpers;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
@@ -30,7 +31,8 @@ public class VerifierApiServiceTests
     /// </summary>
     private static VerifierApiService CreateService(
         Func<HttpRequestMessage, HttpResponseMessage> handler,
-        VerifierSettings? settings = null)
+        VerifierSettings? settings = null,
+        ILogger<VerifierApiService>? logger = null)
     {
         var mockHandler = new MockHttpMessageHandler(handler);
         var httpClient  = new HttpClient(mockHandler)
@@ -43,7 +45,8 @@ public class VerifierApiServiceTests
             PollIntervalSeconds = 0,   // No waiting between polls in tests
             PollTimeoutSeconds  = 2,   // Short timeout for the timeout tests
         });
-        return new VerifierApiService(httpClient, options, NullLogger<VerifierApiService>.Instance);
+        return new VerifierApiService(
+            httpClient, options, logger ?? NullLogger<VerifierApiService>.Instance);
     }
 
     // ── InitializeTransactionAsync ────────────────────────────────────────────
@@ -925,5 +928,43 @@ public class VerifierApiServiceTests
         // Act & Assert
         await service.Invoking(s => s.WaitForWalletResponseAsync("tx-timeout"))
             .Should().ThrowAsync<TimeoutException>();
+    }
+
+    // ── Poll logging ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task WaitForWalletResponseAsync_DoesNotWarn_WhileThePresentationIsNotSubmitted()
+    {
+        // Arrange: the backend answers as it does while the holder is still deciding.
+        var logger  = new CapturingLogger<VerifierApiService>();
+        var service = CreateService(
+            _ => HttpResponseFactory.BadRequest("""{"error":"PresentationNotSubmitted"}"""),
+            logger: logger);
+
+        // Act
+        var act = async () => await service.WaitForWalletResponseAsync("tx-1");
+
+        // Assert: it still times out, but waiting is not something to warn about — it arrives
+        // once per poll and would drown the failures worth seeing.
+        await act.Should().ThrowAsync<TimeoutException>();
+        logger.MessagesAt(LogLevel.Warning).Should().BeEmpty();
+        logger.MessagesAt(LogLevel.Debug).Should().Contain(m => m.Contains("PresentationNotSubmitted"));
+    }
+
+    [Fact]
+    public async Task WaitForWalletResponseAsync_Warns_WhenAPollFailsUnexpectedly()
+    {
+        // Arrange: anything other than "not submitted yet" is worth surfacing.
+        var logger  = new CapturingLogger<VerifierApiService>();
+        var service = CreateService(
+            _ => HttpResponseFactory.BadRequest("""{"error":"InvalidTransactionId"}"""),
+            logger: logger);
+
+        // Act
+        var act = async () => await service.WaitForWalletResponseAsync("tx-1");
+
+        // Assert
+        await act.Should().ThrowAsync<TimeoutException>();
+        logger.MessagesAt(LogLevel.Warning).Should().Contain(m => m.Contains("InvalidTransactionId"));
     }
 }

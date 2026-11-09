@@ -249,7 +249,15 @@ public class VerifierApiService
             else if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
             {
                 var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogWarning("Poll {Status}: {Body}", response.StatusCode, body);
+
+                // "PresentationNotSubmitted" is the ordinary answer while the holder is still
+                // looking at the consent screen, so it arrives once per poll — a successful
+                // verification produced 47 of them. Warning about the expected case buries the
+                // unexpected one and makes a healthy verification read like a fault.
+                if (IsAwaitingHolder(body))
+                    _logger.LogDebug("Poll {Status}: {Body}", response.StatusCode, body);
+                else
+                    _logger.LogWarning("Poll {Status}: {Body}", response.StatusCode, body);
             }
 
             await Task.Delay(interval, ct);
@@ -257,6 +265,30 @@ public class VerifierApiService
 
         throw new TimeoutException(
             "No wallet response within " + _settings.PollTimeoutSeconds + "s.");
+    }
+
+    /// <summary>
+    /// Whether an unsuccessful poll merely means the holder has not answered yet, rather than
+    /// something having gone wrong. Such a response is expected on every poll until the wallet
+    /// submits, and is logged at debug level instead of as a warning.
+    /// </summary>
+    private static bool IsAwaitingHolder(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && string.Equals(error.GetString(), "PresentationNotSubmitted", StringComparison.Ordinal);
+        }
+        catch (JsonException)
+        {
+            // Not JSON, so not a status the backend is reporting in its usual shape.
+            return false;
+        }
     }
 
     // ── Step 3: Extract Identity Data ─────────────────────────────────────────
