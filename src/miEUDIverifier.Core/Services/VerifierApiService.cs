@@ -225,7 +225,12 @@ public class VerifierApiService
             {
                 var rawJson = await response.Content.ReadAsStringAsync(ct);
                 onRawResponse?.Invoke(rawJson);
-                _logger.LogInformation("Poll raw: {Raw}", rawJson);
+
+                // The whole wallet response, so the credential and the attributes in it. Debug
+                // level, because logs outlive the request and usually travel further than the
+                // application does: a verifier should not spill personal data into them by
+                // default. Callers that need the raw response get it through onRawResponse.
+                _logger.LogDebug("Poll raw: {Raw}", rawJson);
 
                 var envelope = JsonSerializer.Deserialize<WalletResponseEnvelope>(
                     rawJson, JsonOptions);
@@ -495,7 +500,10 @@ public class VerifierApiService
                 "/utilities/validations/msoMdoc/deviceResponse", content, ct);
 
             var json = await httpResp.Content.ReadAsStringAsync(ct);
-            _logger.LogInformation("Utility endpoint response ({Status}): {Json}",
+
+            // The decoded mdoc, i.e. the attributes in the clear — debug level for the same
+            // reason as the raw poll response above.
+            _logger.LogDebug("Utility endpoint response ({Status}): {Json}",
                 httpResp.StatusCode, json);
 
             if (!httpResp.IsSuccessStatusCode)

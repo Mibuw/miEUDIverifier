@@ -967,4 +967,25 @@ public class VerifierApiServiceTests
         await act.Should().ThrowAsync<TimeoutException>();
         logger.MessagesAt(LogLevel.Warning).Should().Contain(m => m.Contains("InvalidTransactionId"));
     }
+
+    [Fact]
+    public async Task WaitForWalletResponseAsync_KeepsThePresentationOutOfInformationLogs()
+    {
+        // Arrange: a wallet response carrying a credential.
+        const string vpToken = "eyJhbGciOiJFUzI1NiJ9.SENSITIVE-CREDENTIAL-PAYLOAD.sig";
+        var logger  = new CapturingLogger<VerifierApiService>();
+        var service = CreateService(
+            _ => HttpResponseFactory.Ok($$"""
+                { "transaction_id": "tx-1", "vp_token": "{{vpToken}}" }
+                """),
+            logger: logger);
+
+        // Act
+        await service.WaitForWalletResponseAsync("tx-1");
+
+        // Assert: logs outlive the request and travel further than the application, so the
+        // response body belongs at debug level, not in whatever an operator runs by default.
+        logger.MessagesAt(LogLevel.Information).Should().NotContain(m => m.Contains(vpToken));
+        logger.MessagesAt(LogLevel.Debug).Should().Contain(m => m.Contains(vpToken));
+    }
 }
