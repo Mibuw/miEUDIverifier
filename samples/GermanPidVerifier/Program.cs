@@ -1,221 +1,260 @@
-// Reading a German PID with the miEUDIverifier.Core NuGet package.
+// Reading a German PID from your own web application, using the miEUDIverifier.Core
+// NuGet package.
 //
-// This sample targets the German EUDI Wallet (SPRIND sandbox, "d-you") and nothing else. It
-// does not reference anything from the miEUDIverifier repository — it pulls
-// `miEUDIverifier.Core` from NuGet like any other consumer would.
+// This sample targets the German EUDI Wallet (SPRIND sandbox, "d-you") and nothing else.
+// It has no project reference into the miEUDIverifier repository — it takes the library
+// from NuGet like any other consumer would.
 //
 // It will NOT work against the public EU reference backend. A verifier backend signs every
 // request object with one access certificate for one trust ecosystem, and the German wallet
 // does not trust the EU reference CA. Pointed at eudiw.dev, the wallet aborts late with
 // DocumentStatusCheckFailed — which looks like a certificate fault and is really a wrong
-// ecosystem. You need a backend of your own holding a SPRIND-issued access certificate; see
-// ../README.md for what that involves and how to reach it.
+// ecosystem. See ../README.md for what you need instead.
 //
-// Two things this process never controls:
-//   * The CERTIFICATES. The access certificate that signs the request object, and the
-//     registration certificate that decides which attributes you may ask for, both live in
-//     the backend.
-//   * The RESPONSE URL the wallet posts to. The backend derives it from VERIFIER_PUBLICURL.
+// Everything configurable lives in appsettings.json under "VerifierSettings", read here by
+// AddMiEUDIverifier. What is deliberately NOT there: certificates. The access certificate
+// that signs the request object and the registration certificate that decides which
+// attributes you may ask for both belong to the verifier backend, and so does the response
+// URL the wallet posts to. Your side names an intended use; that is all.
 
+using System.Collections.Concurrent;
 using miEUDIverifier;
 using miEUDIverifier.Configuration;
 using miEUDIverifier.Models;
 using miEUDIverifier.Services;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
-// ── 1. Configuration ──────────────────────────────────────────────────────────
-// The library reads one section, "VerifierSettings". Where it comes from is up to you; here
-// it is appsettings.json, overridable by EUDI_-prefixed environment variables and by
-// --Key=Value on the command line, e.g.
-//     dotnet run -- --VerifierSettings:BackendUrl=http://localhost:8080
+var builder = WebApplication.CreateBuilder(args);
 
-var configuration = new ConfigurationBuilder()
-    .SetBasePath(AppContext.BaseDirectory)
-    .AddJsonFile("appsettings.json", optional: false)
-    .AddEnvironmentVariables("EUDI_")
-    .AddCommandLine(args)
-    .Build();
+// Environment variables with an EUDI_ prefix override appsettings.json, e.g.
+//   EUDI_VerifierSettings__BackendUrl=http://localhost:8080
+builder.Configuration.AddEnvironmentVariables("EUDI_");
 
-var settings = configuration
-    .GetSection(VerifierSettings.SectionName)
-    .Get<VerifierSettings>() ?? new VerifierSettings();
+// Registers VerifierApiService with a typed HttpClient pointed at
+// VerifierSettings:BackendUrl. Logging is already configured by the web host.
+builder.Services.AddMiEUDIverifier(builder.Configuration);
 
-// ── 2. Dependency injection ───────────────────────────────────────────────────
-// AddMiEUDIverifier registers VerifierApiService with a typed HttpClient whose BaseAddress
-// is VerifierSettings:BackendUrl. Logging has to be registered too — the service takes an
-// ILogger<VerifierApiService> and resolution fails without a provider.
+// Verifications in flight. In a real application this is your database or cache — it has to
+// outlive the request that started it, because the wallet answers minutes later.
+builder.Services.AddSingleton<ConcurrentDictionary<string, Verification>>();
 
-var services = new ServiceCollection();
-services.AddLogging(b => b
-    .AddSimpleConsole(o => o.SingleLine = true)
-    .SetMinimumLevel(LogLevel.Warning)
-    .AddFilter("miEUDIverifier", LogLevel.Information));
-services.AddMiEUDIverifier(configuration);
+var app = builder.Build();
 
-await using var provider = services.BuildServiceProvider();
-var verifier = provider.GetRequiredService<VerifierApiService>();
+var settings = app.Services.GetRequiredService<IOptions<VerifierSettings>>().Value;
+var store = app.Services.GetRequiredService<ConcurrentDictionary<string, Verification>>();
 
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
-
-// ── 3. The German request ─────────────────────────────────────────────────────
-// Every value here exists to stay inside what the registration certificate grants. The rule
-// that governs all of it: ask for more than the certificate covers and the wallet aborts
-// before the consent screen, posting an error response a fraction of a second after it
-// fetched the request object — no consent screen, no PIN, and on this side it is
+// ── What to ask the wallet for ────────────────────────────────────────────────
+// Every value exists to stay inside what the registration certificate grants: ask for more
+// and the wallet aborts before the consent screen, posting an error response a fraction of
+// a second after it fetched the request object — no consent screen, no PIN, and from here
 // indistinguishable from a trust failure.
 //
-// These are set through TransactionOptions rather than appsettings.json on purpose: the
-// .NET configuration binder APPENDS to a list that already carries defaults, so configuring
-// them as JSON arrays would silently ask for the defaults as well.
+// These are set in code rather than appsettings.json on purpose: the .NET configuration
+// binder APPENDS to a list that already carries defaults, so configuring them as JSON
+// arrays would silently ask for the defaults as well.
 
-var options = new TransactionOptions
+TransactionOptions GermanPidRequest() => new()
 {
-    // The only certificate-related value this process ever sends — and note that it is a
-    // NAME, not a certificate. It goes out as `intended_use_id` and the backend resolves it
-    // to the registration certificate it holds under VERIFIER_INTENDEDUSES_<n>_ID. No
-    // keystore, key, password or certificate JWT is configured on this side at all.
+    // The only certificate-related value this application sends — and it is a NAME, not a
+    // certificate. The backend resolves it to the registration certificate it holds under
+    // VERIFIER_INTENDEDUSES_<n>_ID.
     IntendedUseId = settings.IntendedUseId,
 
     // The German wallet runs the HAIP profile and refuses an unencrypted response. Without
     // this it rejects the request inside the wallet, before the consent screen, so nothing
-    // appears in the verifier log at all.
+    // reaches the verifier log at all.
     ResponseMode = "direct_post.jwt",
 
-    // Drop the generic EU SD-JWT option — a German registration certificate does not cover
-    // it, and offering it would put the request outside the certificate's scope.
+    // Drop the generic EU SD-JWT option; a German registration certificate does not cover it.
     SdJwtVctValues = new List<string>(),
 
     // Exactly the vct the certificate covers.
     GermanPidVctValues = new List<string> { "urn:eudi:pid:de:1" },
 
-    // Attributes in mso_mdoc spelling; the SD-JWT option translates birth_date → birthdate
-    // and nationality → nationalities by itself. This list has to match what the
-    // registration certificate grants, attribute for attribute.
+    // mso_mdoc spelling; the SD-JWT option translates birth_date → birthdate and
+    // nationality → nationalities itself.
     PidClaims = new List<string>
     {
-        "family_name",
-        "given_name",
-        "birth_date",
-        "place_of_birth",
-        "nationality",
-        "issuing_authority",
-        "issuing_country",
+        "family_name", "given_name", "birth_date", "place_of_birth",
+        "nationality", "issuing_authority", "issuing_country",
     },
 };
 
-Console.WriteLine($"Backend        : {settings.BackendUrl}");
-Console.WriteLine($"Intended use   : {options.IntendedUseId}");
-Console.WriteLine($"Claims         : {string.Join(", ", options.PidClaims!)}");
-Console.WriteLine();
+// ── POST /verify ──────────────────────────────────────────────────────────────
+// Starts a verification and answers immediately with the deep link. It must not wait for
+// the wallet: that takes as long as a human takes.
 
-// ── 4. Start the transaction ──────────────────────────────────────────────────
-// Note where request_uri points: at the BACKEND's public URL, never at this process.
-
-InitTransactionResponse tx;
-try
+app.MapPost("/verify", async (VerifierApiService verifier, IServiceScopeFactory scopes) =>
 {
-    tx = await verifier.InitializeTransactionAsync(options, cts.Token);
-}
-catch (HttpRequestException ex)
+    var options = GermanPidRequest();
+
+    InitTransactionResponse tx;
+    try
+    {
+        tx = await verifier.InitializeTransactionAsync(options);
+    }
+    catch (HttpRequestException ex)
+    {
+        return Results.Problem(
+            $"Cannot reach the verifier backend at {settings.BackendUrl}: {ex.Message}",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
+    var id = Guid.NewGuid().ToString("N");
+    var verification = new Verification
+    {
+        // With the x509_hash prefix the client_id IS the base64url SHA-256 of the backend's
+        // access certificate — the only shape in which that certificate reaches this process.
+        ClientId = tx.ClientId,
+        DeepLink = tx.BuildWalletDeepLink(settings.AuthorizationRequestScheme),
+    };
+    verification.Qr = QrCodeService.GeneratePng(verification.DeepLink);
+    store[id] = verification;
+
+    // There is no callback. The backend holds the response until it is fetched, so wait for
+    // it in the background and let your own frontend poll this application.
+    _ = Task.Run(() => AwaitWallet(id, tx.TransactionId, options, scopes, app.Lifetime.ApplicationStopping));
+
+    return Results.Created($"/verify/{id}", new
+    {
+        id,
+        status = verification.Status,
+        clientId = verification.ClientId,
+        deepLink = verification.DeepLink,
+        qrCode = $"/verify/{id}/qr",
+    });
+});
+
+// ── GET /verify/{id} ──────────────────────────────────────────────────────────
+
+app.MapGet("/verify/{id}", (string id) =>
 {
-    Console.Error.WriteLine($"Cannot reach the verifier backend at {settings.BackendUrl}: {ex.Message}");
-    Console.Error.WriteLine("This sample needs a backend holding a SPRIND access certificate — see ../README.md.");
-    return 1;
-}
+    if (!store.TryGetValue(id, out var v))
+        return Results.NotFound(new { error = "Unknown verification." });
 
-Console.WriteLine($"Transaction : {tx.TransactionId}");
+    if (v.Identity is null)
+        return Results.Ok(new { id, status = v.Status, error = v.Error });
 
-// The access certificate, as seen from here. With the x509_hash prefix the client_id IS the
-// base64url SHA-256 of the backend's certificate — this is the only form in which that
-// certificate reaches this process. Reproduce it with:
-//   openssl x509 -in access-certificate.pem -outform DER \
-//     | openssl dgst -sha256 -binary | basenc --base64url | tr -d '='
-// If the two ever disagree, VERIFIER_ORIGINALCLIENTID was not updated after the certificate
-// was reissued, and the wallet will refuse the request as an untrusted chain.
-Console.WriteLine($"client_id   : {tx.ClientId}");
-Console.WriteLine($"request_uri : {tx.RequestUri}  ({tx.RequestUriMethod.ToUpperInvariant()})");
-Console.WriteLine();
+    return Results.Ok(new
+    {
+        id,
+        status = v.Status,
+        familyName = v.Identity.FamilyName,
+        givenName = v.Identity.GivenName,
+        birthDate = v.Identity.BirthDate,
+        placeOfBirth = v.Identity.PlaceOfBirth,
+        nationality = v.Identity.Nationality,
+        issuingAuthority = v.Identity.IssuingAuthority,
+        issuingCountry = v.Identity.IssuingCountry,
+        format = v.Identity.CredentialFormat,
+        credentialType = v.Identity.CredentialType,
+    });
+});
 
-// ── 5. Present the deep link ──────────────────────────────────────────────────
-// Cross-device: render the QR code and let the holder scan it. Same device: hand the deep
-// link to the OS so the wallet opens directly.
+// ── GET /verify/{id}/qr ───────────────────────────────────────────────────────
 
-var deepLink = tx.BuildWalletDeepLink(settings.AuthorizationRequestScheme);
+app.MapGet("/verify/{id}/qr", (string id) =>
+    store.TryGetValue(id, out var v) && v.Qr is not null
+        ? Results.File(v.Qr, "image/png")
+        : Results.NotFound());
 
-var qrPath = Path.Combine(Environment.CurrentDirectory, "qr.png");
-await File.WriteAllBytesAsync(qrPath, QrCodeService.GeneratePng(deepLink), cts.Token);
+// ── GET / ─────────────────────────────────────────────────────────────────────
+// A page small enough to read in one go: start a verification, show the QR code, poll until
+// the attributes arrive. This is the shape of the real flow — the browser polls YOUR
+// application, which polls the verifier backend.
 
-Console.WriteLine("Scan this with the German EUDI Wallet:");
-Console.WriteLine($"  QR code  : {qrPath}");
-Console.WriteLine($"  Deep link: {deepLink}");
-Console.WriteLine();
+app.MapGet("/", () => Results.Content("""
+    <!doctype html><meta charset="utf-8"><title>German PID</title>
+    <style>body{font:16px system-ui;margin:3rem auto;max-width:34rem}
+    pre{background:#f4f4f5;padding:1rem;border-radius:.5rem;overflow:auto}</style>
+    <h1>Read a German PID</h1>
+    <button id="go">Start verification</button>
+    <div id="out"></div>
+    <script>
+    document.getElementById('go').onclick = async () => {
+      const out = document.getElementById('out');
+      const r = await fetch('/verify', { method: 'POST' });
+      if (!r.ok) { out.textContent = 'Backend unreachable — see the console output.'; return; }
+      const v = await r.json();
+      out.innerHTML = '<p>Scan with the German EUDI Wallet:</p>' +
+                      '<img src="' + v.qrCode + '" alt="QR code">' +
+                      '<p id="s">waiting…</p>';
+      const poll = setInterval(async () => {
+        const d = await (await fetch('/verify/' + v.id)).json();
+        if (d.status === 'waiting') return;
+        clearInterval(poll);
+        document.getElementById('s').outerHTML =
+          '<pre>' + JSON.stringify(d, null, 2) + '</pre>';
+      }, 2000);
+    };
+    </script>
+    """, "text/html"));
 
-// ── 6. Wait for the wallet ────────────────────────────────────────────────────
-// There is no callback. The backend holds the response until it is fetched, and this call
-// polls for it. In a web application you would run it in the background and let your own
-// frontend poll you.
-//
-// The method returns only once a presentation has actually arrived; every other outcome is
-// an exception, so these three catches are the complete set of failure paths.
+app.Run();
 
-Console.WriteLine($"Waiting up to {settings.PollTimeoutSeconds}s (Ctrl+C to stop) …");
+// ── Waiting for the wallet ────────────────────────────────────────────────────
+// WaitForWalletResponseAsync returns only once a presentation has actually arrived; every
+// other outcome is an exception, so these catches are the complete set of failure paths.
 
-WalletResponseEnvelope envelope;
-try
+async Task AwaitWallet(
+    string id,
+    string transactionId,
+    TransactionOptions options,
+    IServiceScopeFactory scopes,
+    CancellationToken ct)
 {
-    envelope = await verifier.WaitForWalletResponseAsync(
-        tx.TransactionId,
-        progress: new Progress<string>(m => Console.WriteLine($"  {m}")),
-        ct: cts.Token);
+    // The request that started this is long gone, so resolve the service in a fresh scope.
+    using var scope = scopes.CreateScope();
+    var verifier = scope.ServiceProvider.GetRequiredService<VerifierApiService>();
+    var v = store[id];
+
+    try
+    {
+        var envelope = await verifier.WaitForWalletResponseAsync(transactionId, ct: ct);
+
+        // Pass the same options the transaction was started with. Every presentation is
+        // checked against the credential types that were actually requested — the backend's
+        // own verdict is not taken as sufficient.
+        var identity = await verifier.ExtractIdentityDataAsync(envelope, options, ct);
+
+        if (identity.CredentialType is null)
+        {
+            // Nothing of the requested type came back. That is a rejection, not a partial
+            // result: polling again will not change it, and it is also what a request that
+            // reached past the registration certificate looks like from here.
+            v.Status = "rejected";
+            v.Error = "The response carried no credential of the requested type.";
+            return;
+        }
+
+        v.Identity = identity;
+        v.Status = identity.IsComplete ? "complete" : "partial";
+    }
+    catch (TimeoutException ex)
+    {
+        v.Status = "timeout";
+        v.Error = ex.Message;
+    }
+    catch (OperationCanceledException)
+    {
+        v.Status = "cancelled";
+    }
+    catch (Exception ex)
+    {
+        // Includes InvalidOperationException, which is how a wallet-side OpenID4VP error
+        // surfaces.
+        v.Status = "error";
+        v.Error = ex.Message;
+    }
 }
-catch (TimeoutException ex)
+
+/// <summary>One verification in flight.</summary>
+sealed class Verification
 {
-    // Either the local deadline passed, or the backend reported the request as expired.
-    Console.Error.WriteLine($"Timed out: {ex.Message}");
-    return 1;
+    public string Status { get; set; } = "waiting";
+    public string? Error { get; set; }
+    public string ClientId { get; init; } = string.Empty;
+    public string DeepLink { get; init; } = string.Empty;
+    public byte[]? Qr { get; set; }
+    public IdentityData? Identity { get; set; }
 }
-catch (InvalidOperationException ex)
-{
-    // The wallet answered with an OpenID4VP error instead of a presentation.
-    Console.Error.WriteLine(ex.Message);
-    return 1;
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("Cancelled.");
-    return 2;
-}
-
-// ── 7. Read the attributes ────────────────────────────────────────────────────
-// Pass the same options the transaction was started with. Every presentation is checked
-// against the credential types that were actually requested — the backend's own verdict is
-// not taken as sufficient. A response carrying nothing that was asked for yields a
-// CredentialType of null: that is a rejection, not a partial result, and polling again will
-// not change it. It is also the signature of a request that went outside the registration
-// certificate's scope.
-
-var identity = await verifier.ExtractIdentityDataAsync(envelope, options, cts.Token);
-
-if (identity.CredentialType is null)
-{
-    Console.Error.WriteLine("Rejected: the response carried no credential of the requested type.");
-    Console.Error.WriteLine("If the wallet showed no consent screen, the request asked for more than");
-    Console.Error.WriteLine("the registration certificate grants — see ../README.md.");
-    return 1;
-}
-
-Console.WriteLine();
-Console.WriteLine(identity.IsComplete ? "Complete presentation:" : "Partial presentation:");
-Console.WriteLine($"  Family name       : {identity.FamilyName}");
-Console.WriteLine($"  Given name        : {identity.GivenName}");
-Console.WriteLine($"  Date of birth     : {identity.BirthDate}");
-Console.WriteLine($"  Place of birth    : {identity.PlaceOfBirth}");
-Console.WriteLine($"  Nationality       : {identity.Nationality}");
-Console.WriteLine($"  Issuing authority : {identity.IssuingAuthority}");
-Console.WriteLine($"  Issuing country   : {identity.IssuingCountry}");
-Console.WriteLine($"  Format / type     : {identity.CredentialFormat} / {identity.CredentialType}");
-
-return 0;

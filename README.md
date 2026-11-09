@@ -564,7 +564,7 @@ miEUDIverifier/
 │   └── docker-compose.yml                  # Local EUDI verifier backend stack + app
 ├── samples/
 │   ├── README.md                            # Endpoint, certificates, response URL
-│   └── GermanPidVerifier/                   # German PID via the NuGet package alone
+│   └── GermanPidVerifier/                   # ASP.NET Core app, NuGet package only
 └── src/
     ├── miEUDIverifier/                      # ASP.NET Core web app (Minimal API)
     │   ├── miEUDIverifier.csproj

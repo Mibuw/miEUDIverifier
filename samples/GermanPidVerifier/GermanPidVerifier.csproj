@@ -1,7 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -9,25 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The only dependency that is this project: everything else is plain
-         Microsoft.Extensions.* plumbing you would have in any .NET host. -->
+    <!-- The only dependency. Configuration, dependency injection and logging come
+         with the web SDK, so there is no other plumbing to add. -->
     <PackageReference Include="miEUDIverifier.Core" Version="1.4.2" />
-
-    <!-- Configuration sources used below. The library itself only asks for
-         IConfiguration; which providers feed it is entirely your choice. -->
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.CommandLine" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
-
-    <!-- VerifierApiService is resolved from DI and takes an ILogger<T>, so a
-         logging provider has to be registered. -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

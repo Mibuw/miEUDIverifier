@@ -1,7 +1,8 @@
 # Reading a German PID with `miEUDIverifier.Core`
 
-[`GermanPidVerifier/`](GermanPidVerifier) is a standalone console application that reads a PID from
-the **German EUDI Wallet** (SPRIND sandbox, "d-you"). It has **no project reference into this
+[`GermanPidVerifier/`](GermanPidVerifier) is a small ASP.NET Core application that reads a PID from
+the **German EUDI Wallet** (SPRIND sandbox, "d-you") — the shape a real integration takes, with the
+settings in the web server's own configuration. It has **no project reference into this
 repository** — it pulls the library from NuGet exactly as any other consumer would:
 
 ```xml
@@ -37,13 +38,22 @@ cd samples/GermanPidVerifier
 dotnet run
 ```
 
-`appsettings.json` expects the backend at `http://localhost:8080`. Override anything on the command
-line:
+Then open <http://localhost:5080/> and press **Start verification**. The page shows a QR code and
+polls until the attributes arrive — which is the shape of the real flow: the browser polls *your*
+application, and your application polls the verifier backend.
+
+| Endpoint | |
+|---|---|
+| `POST /verify` | Starts a verification. Answers **immediately** with `{ id, status, clientId, deepLink, qrCode }`. |
+| `GET /verify/{id}` | `waiting` while the wallet is out; then the attributes, or `rejected` / `timeout` / `error`. |
+| `GET /verify/{id}/qr` | The deep link as a PNG. |
+
+`appsettings.json` expects the backend at `http://localhost:8080`. Everything is overridable by
+environment variable or command line:
 
 ```bash
-dotnet run -- --VerifierSettings:BackendUrl=http://localhost:8080
+EUDI_VerifierSettings__BackendUrl=http://localhost:8080 dotnet run
 dotnet run -- --VerifierSettings:IntendedUseId=my-intended-use
-dotnet run -- --VerifierSettings:PollTimeoutSeconds=30
 ```
 
 If your backend runs on a server and is not published to the internet — which is the right default,
@@ -53,38 +63,62 @@ see below — reach its REST API through a tunnel:
 ssh -N -L 8080:<backend-container-ip>:8080 user@your-server
 ```
 
-The tunnel carries only the REST API you call. **The wallet never uses it:** it resolves the URLs
-the backend put in the signed request object, which are public. A run against a tunnelled backend
-therefore produces a QR code the phone can scan straight away:
+The tunnel carries only the REST API your application calls. **The wallet never uses it:** it
+resolves the URLs the backend put in the signed request object, which are public. A run against a
+tunnelled backend therefore produces a QR code the phone can scan straight away, and a completed
+verification looks like this:
 
-```
-Backend        : http://localhost:8080
-Intended use   : pos-pid
-Claims         : family_name, given_name, birth_date, place_of_birth, nationality, issuing_authority, issuing_country
-
-Transaction : JQ7Sz0ZpTS3Afb4vL60rXtjcBwLxRw716THWadbIgMtCcBST8eyhvLQPiPaid…
-client_id   : x509_hash:EwIYRjj23v-4q6yRqcz3QH1HuumzFXKhZsDSo7OJN0g
-request_uri : https://verifier.example.com/wallet/request.jwt/oYJb0_5iKQqo8F1…  (GET)
-
-Scan this with the German EUDI Wallet:
-  QR code  : …/samples/GermanPidVerifier/qr.png
-  Deep link: openid4vp://?client_id=…&request_uri=…&request_uri_method=get
-
-Waiting up to 120s (Ctrl+C to stop) …
-
-Complete presentation:
-  Family name       : MUSTERMANN
-  Given name        : ERIKA
-  Date of birth     : 1964-08-12
-  Place of birth    : BERLIN
-  Nationality       : DE
-  Issuing authority : DE
-  Issuing country   : DE
-  Format / type     : mso_mdoc / eu.europa.ec.eudi.pid.1
+```json
+{
+  "id": "b5b1ef21a53f4b07a43c86a8a97e6458",
+  "status": "complete",
+  "familyName": "MUSTERMANN",
+  "givenName": "ERIKA",
+  "birthDate": "1964-08-12",
+  "placeOfBirth": "BERLIN",
+  "nationality": "DE",
+  "issuingAuthority": "DE",
+  "issuingCountry": "DE",
+  "format": "mso_mdoc",
+  "credentialType": "eu.europa.ec.eudi.pid.1"
+}
 ```
 
 The request offers `mso_mdoc` and `dc+sd-jwt` as alternatives and the wallet picks one, so which
 format comes back is its choice, not yours. Both have been verified against the d-you wallet.
+
+## What the integration actually looks like
+
+Two lines of wiring, and the settings in your web server's own configuration:
+
+```csharp
+builder.Configuration.AddEnvironmentVariables("EUDI_");
+builder.Services.AddMiEUDIverifier(builder.Configuration);
+```
+
+```json
+{
+  "Kestrel":  { "Endpoints": { "Http": { "Url": "http://localhost:5080" } } },
+  "Logging":  { "LogLevel": { "Default": "Warning", "miEUDIverifier": "Information" } },
+  "VerifierSettings": {
+    "BackendUrl": "http://localhost:8080",
+    "IntendedUseId": "pos-pid",
+    "ResponseMode": "direct_post.jwt",
+    "RequestUriMethod": "get",
+    "PollIntervalSeconds": 3,
+    "PollTimeoutSeconds": 120
+  }
+}
+```
+
+`miEUDIverifier.Core` is the **only** package reference — configuration, dependency injection and
+logging come with the web SDK.
+
+**`POST /verify` must not wait for the wallet.** There is no callback: the backend holds the
+response until it is fetched, so the handler starts the transaction, answers with the deep link and
+leaves a background task polling. That task outlives the request, so it resolves
+`VerifierApiService` from its own scope, and the verification state has to outlive the request too —
+a `ConcurrentDictionary` in the sample, your database in reality.
 
 ## Three moving parts, and where each one lives
 
@@ -103,8 +137,9 @@ cryptography belongs to the backend.
 calls to start a transaction and poll for the answer.
 
 `AddMiEUDIverifier(configuration)` registers `VerifierApiService` with a typed `HttpClient` whose
-`BaseAddress` comes from that setting. Register a logging provider as well; the service takes an
-`ILogger<VerifierApiService>` and resolution fails without one.
+`BaseAddress` comes from that setting. A web host already provides logging; outside one, register a
+logging provider too — the service takes an `ILogger<VerifierApiService>` and resolution fails
+without it.
 
 > Do not publish this API to the internet. Anyone who can reach `/ui/*` can start transactions under
 > your verifier identity and read wallet responses, without authenticating. Expose only `/wallet/*`,
@@ -196,11 +231,11 @@ other side — one claim entry per attribute, mdoc paths carrying the namespace 
 `WaitForWalletResponseAsync` returns only once a presentation has actually arrived. Everything else
 is an exception, so these are the complete set:
 
-| Outcome | How it surfaces |
-|---|---|
-| No answer in time, or the request expired | `TimeoutException` |
-| The wallet answered with an OpenID4VP error | `InvalidOperationException` |
-| Cancelled | `OperationCanceledException` |
+| Outcome | How it surfaces | `status` in the sample |
+|---|---|---|
+| No answer in time, or the request expired | `TimeoutException` | `timeout` |
+| The wallet answered with an OpenID4VP error | `InvalidOperationException` | `error` |
+| Cancelled, e.g. the host shutting down | `OperationCanceledException` | `cancelled` |
 
 One more case is not an exception. `ExtractIdentityDataAsync` checks each presentation against the
 credential types that were actually requested rather than trusting the backend's verdict, and
@@ -209,7 +244,7 @@ result — polling again will not change it, and it is also what a request that 
 registration certificate looks like from here.
 
 ```csharp
-if (identity.CredentialType is null)   // rejected: nothing of the requested type
-else if (identity.IsComplete)          // every requested attribute present
-else                                   // partial: credential accepted, fewer attributes
+if (identity.CredentialType is null)   // "rejected": nothing of the requested type
+else if (identity.IsComplete)          // "complete": every requested attribute present
+else                                   // "partial": credential accepted, fewer attributes
 ```
