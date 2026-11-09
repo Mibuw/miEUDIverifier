@@ -112,8 +112,17 @@ calls to start a transaction and poll for the answer.
 
 ### 2. The certificates
 
-**Nothing in your process holds a key.** The backend signs every request object, so the access
-certificate lives there as a PKCS#12 mounted into the container:
+**Nothing in your process holds a key** — and nothing in `appsettings.json` is a placeholder
+waiting for one. There is no keystore path, no password and no certificate JWT on this side. The
+client touches certificates in exactly two indirect places:
+
+| Direction | In the sample | On the wire |
+|---|---|---|
+| out | `IntendedUseId = "pos-pid"` | `intended_use_id` — a **name**, not a certificate |
+| back | `tx.ClientId`, printed | `client_id` — the SHA-256 of the access certificate |
+
+The backend signs every request object, so the access certificate lives there as a PKCS#12 mounted
+into the container:
 
 | Backend variable | Purpose |
 |---|---|

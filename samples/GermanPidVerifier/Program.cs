@@ -73,8 +73,10 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 var options = new TransactionOptions
 {
-    // Selects which registration certificate the backend attaches. This is the id you gave
-    // it in VERIFIER_INTENDEDUSES_<n>_ID.
+    // The only certificate-related value this process ever sends — and note that it is a
+    // NAME, not a certificate. It goes out as `intended_use_id` and the backend resolves it
+    // to the registration certificate it holds under VERIFIER_INTENDEDUSES_<n>_ID. No
+    // keystore, key, password or certificate JWT is configured on this side at all.
     IntendedUseId = settings.IntendedUseId,
 
     // The German wallet runs the HAIP profile and refuses an unencrypted response. Without
@@ -125,6 +127,14 @@ catch (HttpRequestException ex)
 }
 
 Console.WriteLine($"Transaction : {tx.TransactionId}");
+
+// The access certificate, as seen from here. With the x509_hash prefix the client_id IS the
+// base64url SHA-256 of the backend's certificate — this is the only form in which that
+// certificate reaches this process. Reproduce it with:
+//   openssl x509 -in access-certificate.pem -outform DER \
+//     | openssl dgst -sha256 -binary | basenc --base64url | tr -d '='
+// If the two ever disagree, VERIFIER_ORIGINALCLIENTID was not updated after the certificate
+// was reissued, and the wallet will refuse the request as an untrusted chain.
 Console.WriteLine($"client_id   : {tx.ClientId}");
 Console.WriteLine($"request_uri : {tx.RequestUri}  ({tx.RequestUriMethod.ToUpperInvariant()})");
 Console.WriteLine();
