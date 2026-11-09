@@ -97,7 +97,23 @@ services:
       CORS_ORIGINS: "*"
       CORS_METHODS: "*"
       CORS_HEADERS: "*"
-      SPRING_PROFILES_ACTIVE: "self-signed"
+      # CAUTION. This profile swaps the backend's OUTBOUND Ktor HttpClient for one that
+      # "trusts self-signed certificates and performs no hostname verification" (upstream
+      # README; the application logs it as a warning at startup). It says nothing about the
+      # access certificate, which must not be self-signed and is checked separately.
+      #
+      # That client is injected into StatusListTokenValidator (the revocation check),
+      # IsChainTrustedForContextF (trust chain) and LookupTypeMetadataFromUrl. With the
+      # profile on, TLS verification is disabled on exactly the fetches that decide whether a
+      # credential is revoked or its chain is trusted — including, above,
+      # VERIFIER_VALIDATION_STATUSCHECK_ENABLED. Someone able to intercept the backend's
+      # outbound traffic could serve a forged status list and a revoked PID would pass.
+      #
+      # Useful against a development issuer with a self-signed certificate. Against public
+      # endpoints with valid certificates it is not needed, and the safe default is to leave
+      # it out. If removing it breaks something, that names an endpoint with a certificate
+      # problem worth fixing there rather than disabling verification everywhere.
+      # SPRING_PROFILES_ACTIVE: "self-signed"
     volumes:
       - ./certs-de/keystore.p12:/certs/keystore.p12:ro
     networks:

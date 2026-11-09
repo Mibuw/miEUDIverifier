@@ -6,7 +6,7 @@ settings in the web server's own configuration. It has **no project reference in
 repository** — it pulls the library from NuGet exactly as any other consumer would:
 
 ```xml
-<PackageReference Include="miEUDIverifier.Core" Version="1.4.2" />
+<PackageReference Include="miEUDIverifier.Core" Version="1.4.3" />
 ```
 
 It is deliberately **not** part of `miEUDIverifier.sln`, so building the repository never depends on
