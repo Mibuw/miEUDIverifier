@@ -64,6 +64,23 @@ GermanPid__PublicBaseUrl               the verifier's public base URL, e.g. http
    ecosystem. Without them every presentation verifies cryptographically and is still refused as
    untrusted, so the sample refuses to start on an empty folder rather than fail later.
 
+   `./fetch-trust-anchors.sh ./trust-anchors` downloads both and checks the chain. You do not
+   have to take the URLs on trust: each certificate names the next one up in its own
+   `authorityInfoAccess` extension, so they came out of a real presentation —
+
+   ```
+   Deutschland PID-Signer Test CA 1-26-1 2026     valid to 2031-05-19   the issuing CA
+   Deutschland PID-Provider Root Test CA 1 2026   valid to 2032-05-19   self-signed, the anchor
+   ```
+
+   Both are needed: the root is the anchor, and the intermediate builds the path, because the
+   wallet's response carries only the signer's own certificate in its `x5chain`. Verified against
+   a real captured presentation, which then resolves as
+   `trusted=True via=x5c anchor=CN=Deutschland PID-Provider Root Test CA 1 2026`.
+
+   These are **test** anchors. A production verifier uses the production hierarchy, and should
+   take it from the published trust list rather than from `authorityInfoAccess`.
+
 `PublicBaseUrl` must be the name the **wallet** can reach, not localhost: the wallet fetches
 `request_uri` and posts the response over the internet. Behind a reverse proxy, that is the
 outside name.
@@ -95,10 +112,20 @@ Checked locally against a throwaway key and a real registration certificate:
 - the JAR is served as `application/oauth-authz-req+jwt`
 - the DCQL asks for the seven PID attributes under doctype `eu.europa.ec.eudi.pid.1`
 
-**Not yet verified: an end-to-end presentation from the real wallet through this sample.** That
-needs the production access certificate, a publicly reachable host, and the issuer's trust
-anchors. Until that scan has run, `../GermanPidVerifier` with the reference backend is the path
-with a successful run behind it.
+Also verified, against a presentation captured from a real wallet: with the two anchors above,
+the PID signer resolves as trusted through its `x5c`, and a single altered byte in an
+issuer-signed item is caught as `mdoc_digest_mismatch`, naming the element and its `digestID`.
+
+**Not yet verified: an end-to-end presentation from the real wallet through this sample.** The
+request side and the issuer side of the response are checked; what has never run is the two
+joined, with a live wallet posting to this host. That needs the production access certificate and
+a publicly reachable address. Until that scan has run, `../GermanPidVerifier` with the reference
+backend is the path with a successful run behind it.
+
+For a one-off test without touching a production deployment, a temporary tunnel is enough:
+`cloudflared tunnel --url http://localhost:5199`, then set `GermanPid__PublicBaseUrl` to the URL
+it prints. The wallet has to reach `request_uri` and `response_uri` over the internet, so
+localhost will not do.
 
 One thing this sample does better by accident: Tessio serves `request_uri` repeatedly until it
 expires, while the reference backend's endpoint is single-use. A wallet that resolves
