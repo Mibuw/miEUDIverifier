@@ -1,7 +1,9 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using miEUDIverifier.Configuration;
 using miEUDIverifier.Services;
+using miEUDIverifier.Services.Tessio;
 using miEUDIverifier.WebServer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -31,15 +33,47 @@ var backendUrls = (settings.Backends is { Count: > 0 }
     .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
     .ToDictionary(kv => kv.Key, kv => kv.Value.TrimEnd('/'), StringComparer.OrdinalIgnoreCase);
 
-if (backendUrls.Count == 0)
+// The in-process ecosystem, if one is configured, needs no backend URL and no HttpClient: it is
+// the verifier. It is removed from the URL list even when one is still configured for it, so that
+// switching a backend over is one setting rather than two, and a leftover URL cannot quietly win.
+var inProcessBackend = settings.InProcessBackend is { Length: > 0 } ip ? ip : null;
+if (inProcessBackend is not null)
+{
+    backendUrls.Remove(inProcessBackend);
+    builder.Services.AddInProcessVerifier(settings.InProcess);
+
+    // Behind a reverse proxy or a tunnel the application sees a plain HTTP connection, and the
+    // library builds the wallet's response URI from what it sees. Without this the wallet is told
+    // to post the presentation to an http:// address, which it refuses -- and should.
+    //
+    // No proxy is named, which is only safe because the container publishes on the internal
+    // network and nothing but the proxy can reach it. An instance exposed directly must name its
+    // proxies instead, or a caller can forge these headers.
+    builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
+    {
+        forwarded.ForwardedHeaders = ForwardedHeaders.XForwardedProto
+            | ForwardedHeaders.XForwardedHost
+            | ForwardedHeaders.XForwardedFor;
+        forwarded.KnownNetworks.Clear();
+        forwarded.KnownProxies.Clear();
+    });
+}
+
+if (backendUrls.Count == 0 && inProcessBackend is null)
     backendUrls["eu"] = "https://verifier-backend.eudiw.dev";
 
-var defaultBackend = backendUrls.ContainsKey(settings.DefaultBackend)
+// Every ecosystem the app can offer, however it is verified.
+var allBackends = backendUrls.Keys
+    .Concat(inProcessBackend is null ? [] : new[] { inProcessBackend })
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
+var defaultBackend = allBackends.Contains(settings.DefaultBackend, StringComparer.OrdinalIgnoreCase)
     ? settings.DefaultBackend
-    : backendUrls.Keys.First();
+    : allBackends[0];
 
 // Stable order for the demo page's ecosystem switcher: default first, then the rest A-Z.
-var uiBackends = backendUrls.Keys
+var uiBackends = allBackends
     .OrderByDescending(k => string.Equals(k, defaultBackend, StringComparison.OrdinalIgnoreCase))
     .ThenBy(k => k, StringComparer.OrdinalIgnoreCase)
     .ToArray();
@@ -57,17 +91,33 @@ foreach (var (key, url) in backendUrls)
 
 var app = builder.Build();
 
-// One VerifierApiService per configured backend, keyed by backend name.
+if (inProcessBackend is not null)
+{
+    // Before anything that reads the request's scheme or host.
+    app.UseForwardedHeaders();
+
+    // The endpoints the wallet itself calls: the signed request object and the callback it
+    // posts the presentation to. These are not part of the application's own UI and are
+    // reachable without a session cookie, because the wallet has none.
+    app.MapInProcessVerifier();
+}
+
+// One engine per configured backend, keyed by backend name. Which kind of engine depends on the
+// ecosystem: the EU one is verified by the hosted backend it names, the German one in this process.
 var httpFactory     = app.Services.GetRequiredService<IHttpClientFactory>();
 var verifierOptions = app.Services.GetRequiredService<IOptions<VerifierSettings>>();
 var verifierLogger  = app.Services.GetRequiredService<ILogger<VerifierApiService>>();
 var services = backendUrls.Keys.ToDictionary(
     key => key,
-    key => new VerifierApiService(httpFactory.CreateClient($"verifier-{key}"), verifierOptions, verifierLogger),
+    key => (IVerifierEngine)new VerifierApiService(
+        httpFactory.CreateClient($"verifier-{key}"), verifierOptions, verifierLogger),
     StringComparer.OrdinalIgnoreCase);
 
-// Resolves the service for a backend key, falling back to the default backend.
-VerifierApiService ServiceFor(string? backend) =>
+if (inProcessBackend is not null)
+    services[inProcessBackend] = app.Services.GetRequiredService<TessioVerifierEngine>();
+
+// Resolves the engine for a backend key, falling back to the default backend.
+IVerifierEngine ServiceFor(string? backend) =>
     backend is not null && services.TryGetValue(backend, out var s) ? s : services[defaultBackend];
 
 // Per-backend transaction options (e.g. the German backend requests mso_mdoc only and
@@ -93,7 +143,7 @@ miEUDIverifier.Models.TransactionOptions OptionsFor(string? backend) => new()
 // ── Local helper functions ────────────────────────────────────────────────────
 
 // Starts a new transaction (against the session's backend) and updates the AppState
-async Task StartNewTransaction(AppState state, VerifierApiService verifier, CancellationToken ct)
+async Task StartNewTransaction(AppState state, IVerifierEngine verifier, CancellationToken ct)
 {
     var transaction = await verifier.InitializeTransactionAsync(OptionsFor(state.Backend), ct);
     var deepLink    = transaction.BuildWalletDeepLink(settings.AuthorizationRequestScheme);
@@ -116,7 +166,7 @@ async Task StartNewTransaction(AppState state, VerifierApiService verifier, Canc
 // the other ecosystem was healthy. The failure now lands in the AppState, so the page still
 // renders with a readable error and a working ecosystem switcher.
 // Returns false when no transaction exists and there is nothing to poll for.
-async Task<bool> TryStartTransaction(AppState state, VerifierApiService verifier, CancellationToken ct)
+async Task<bool> TryStartTransaction(AppState state, IVerifierEngine verifier, CancellationToken ct)
 {
     try
     {
@@ -140,7 +190,7 @@ async Task<bool> TryStartTransaction(AppState state, VerifierApiService verifier
 }
 
 // Starts the background polling task for a transaction (against the given backend)
-void StartPolling(AppState state, VerifierApiService verifier, CancellationToken appStopping)
+void StartPolling(AppState state, IVerifierEngine verifier, CancellationToken appStopping)
 {
     // Cancel any previous polling task
     state.PollingCts?.Cancel();
@@ -252,7 +302,7 @@ app.MapGet("/", async (HttpContext ctx) =>
     }
 
     return Results.Content(
-        HtmlPage.Render(state, uiBackends, ctx.Request.Headers.AcceptLanguage.ToString()),
+        HtmlPage.Render(state, uiBackends, ctx.Request.Headers.AcceptLanguage.ToString(), inProcessBackend),
         "text/html; charset=utf-8");
 });
 

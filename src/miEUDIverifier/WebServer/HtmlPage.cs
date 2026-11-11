@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Net;
 using System.Text.Json;
 
@@ -16,7 +16,20 @@ public static class HtmlPage
     /// Configured backend keys (trust ecosystems) in display order. Rendered as a switcher when
     /// more than one is configured; pass an empty list to hide it.
     /// </param>
-    public static string Render(AppState state, IReadOnlyList<string> backends, string? acceptLanguage)
+    /// <param name="state">The browser session being rendered.</param>
+    /// <param name="backends">The ecosystems to offer in the switcher.</param>
+    /// <param name="acceptLanguage">The browser's language preference.</param>
+    /// <param name="inProcessBackend">
+    /// The ecosystem verified in this process rather than by a verifier backend, when there is one.
+    /// Named so the page can say what that path does not check: it is the difference between "was
+    /// validly issued" and "is valid now", and a verifier that does not say so claims more than it
+    /// does.
+    /// </param>
+    public static string Render(
+        AppState state,
+        IReadOnlyList<string> backends,
+        string? acceptLanguage,
+        string? inProcessBackend = null)
     {
         var lang = PickLanguage(acceptLanguage);
         var t    = lang == "de" ? De : En;
@@ -48,6 +61,15 @@ public static class HtmlPage
         var noteBlock = string.Equals(state.Backend, "de", StringComparison.OrdinalIgnoreCase)
             ? $"<p class=\"note\">{t["deNote"]}</p>"
             : "";
+
+        // And, where this ecosystem is verified in process, what that does not check. Shown on the
+        // page rather than only written in the README, because the person holding the phone is the
+        // one whose credential is being accepted on weaker terms than they would assume.
+        if (inProcessBackend is { Length: > 0 }
+            && string.Equals(state.Backend, inProcessBackend, StringComparison.OrdinalIgnoreCase))
+        {
+            noteBlock += $"<p class=\"note warn\">{t["revocationNote"]}</p>";
+        }
 
         return Template
             .Replace("___LANG___",            lang)
@@ -151,7 +173,8 @@ public static class HtmlPage
         ["labelCountry"]       = "Ausstellungsland",
         ["btnScanAgain"]       = "Neuen Scan starten",
         ["btnNewRequest"]      = "Neuer Request",
-        ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Angefragt wird die PID wahlweise als mso_mdoc oder SD-JWT VC – Familienname, Vorname, Geburtsdatum, Geburtsort, Staatsangehörigkeit, ausstellende Behörde und Ausstellungsland.",
+        ["deNote"]             = "Test mit der deutschen EUDI-Wallet (SPRIND-Sandbox): Angefragt wird die PID als mso_mdoc – Familienname, Vorname, Geburtsdatum, Geburtsort, Staatsangehörigkeit, ausstellende Behörde und Ausstellungsland.",
+        ["revocationNote"]     = "Hinweis: Diese Prüfung findet ohne Verifier-Backend direkt in der Anwendung statt. Der Widerrufsstatus der PID wird dabei <b>nicht</b> geprüft — bestätigt wird, dass die PID gültig ausgestellt wurde, nicht, dass sie noch gültig ist.",
         ["backendNav"]         = "Trust-Ökosystem wählen",
         ["backend_eu"]         = "EU-Referenzwallet",
         ["backend_de"]         = "Deutsche Wallet",
@@ -178,7 +201,8 @@ public static class HtmlPage
         ["labelCountry"]       = "Issuing country",
         ["btnScanAgain"]       = "Start new scan",
         ["btnNewRequest"]      = "New request",
-        ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): the PID is requested as either mso_mdoc or SD-JWT VC – family name, given name, date of birth, place of birth, nationality, issuing authority and issuing country.",
+        ["deNote"]             = "German EUDI Wallet test (SPRIND sandbox): the PID is requested as mso_mdoc – family name, given name, date of birth, place of birth, nationality, issuing authority and issuing country.",
+        ["revocationNote"]     = "Note: this verification runs inside the application, with no verifier backend. The PID's revocation status is <b>not</b> checked — what is confirmed is that the PID was validly issued, not that it is still valid.",
         ["backendNav"]         = "Choose trust ecosystem",
         ["backend_eu"]         = "EU reference wallet",
         ["backend_de"]         = "German wallet",
@@ -284,6 +308,11 @@ public static class HtmlPage
               box-shadow: 0 1px 3px rgba(0, 51, 153, 0.3);
             }
 
+            .note.warn {
+              color: #9f1239;
+              background: #fff1f2;
+              border-color: #fda4af;
+            }
             .note {
               font-size: 12.5px;
               line-height: 1.5;
