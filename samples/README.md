@@ -1,4 +1,4 @@
-# Reading a German PID with `miEUDIverifier.Core`
+﻿# Reading a German PID with `miEUDIverifier.Core`
 
 [`GermanPidVerifier/`](GermanPidVerifier) is a small ASP.NET Core application that reads a PID from
 the **German EUDI Wallet** (SPRIND sandbox, "d-you") — the shape a real integration takes, with the
@@ -30,6 +30,12 @@ Which to use:
 | Credential format | `mso_mdoc` or `dc+sd-jwt`, either/or | `mso_mdoc` |
 | Revocation checked | yes, by the backend | **no** — see that sample's README |
 | Real wallet presentation | verified end to end | verified end to end (2026-11-11) |
+
+If you have never done this before, start with
+[`GermanPidTessioVerifier/SCHRITT-FUER-SCHRITT.md`](GermanPidTessioVerifier/SCHRITT-FUER-SCHRITT.md):
+a German, command-by-command walkthrough of a test run that says after each step what you must see.
+Its trust anchors are committed ready to use in
+[`GermanPidTessioVerifier/trust-anchors/`](GermanPidTessioVerifier/trust-anchors/).
 
 Both have now completed a presentation from the real German wallet, so the choice is no longer
 between a proven and an unproven path. It is between two containers and one, against one gap: the

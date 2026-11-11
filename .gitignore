@@ -21,6 +21,15 @@ certs-de/
 # Registration / access certificates dropped into the cert folder (any extension)
 registration-certificate*
 
+# One deliberate exception to *.crt above: the German PID TEST issuer's trust anchors. These are
+# public CA certificates, carry no key material and no secret, and every wallet verifier needs
+# them to trust anything at all. Anyone can fetch them from D-Trust, and
+# samples/GermanPidTessioVerifier/fetch-trust-anchors.sh does exactly that and checks the chains.
+# They are committed so a test run needs no download, with their fingerprints recorded next to
+# them in LIESMICH.txt so their authenticity can be checked without trusting this repository.
+# The exception is narrow on purpose: this one folder, this one extension.
+!samples/GermanPidTessioVerifier/trust-anchors/*.crt
+
 # Backend secrets (keystore password, registration certificate).
 # The .env.example template is tracked; a filled-in .env never is.
 .env

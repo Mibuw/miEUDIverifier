@@ -1,0 +1,141 @@
+===============================================================================
+ ZERTIFIKATE FÜR DEN TESTLAUF — was in diesem Ordner liegt und was fehlt
+===============================================================================
+
+Dieser Ordner ist fertig. Du musst hier nichts tun. Zeige den Verifier darauf:
+
+    GermanPid__IssuerTrustAnchorDirectory = <Pfad zu diesem Ordner>
+
+Die ausführliche Anleitung liegt eine Ebene höher: SCHRITT-FUER-SCHRITT.md
+
+
+-------------------------------------------------------------------------------
+ 1. WAS HIER LIEGT (3 Dateien, alle öffentlich)
+-------------------------------------------------------------------------------
+
+Das sind die Trust Anchors des deutschen PID-Test-Ausstellers (D-Trust). Sie
+entscheiden, WESSEN Ausweisen der Verifier glaubt. Ohne sie wird jede
+Präsentation kryptografisch korrekt geprüft und trotzdem als "nicht
+vertrauenswürdig" abgelehnt — was sich wie ein kaputter Ausweis liest und keiner
+ist.
+
+Es sind reine öffentliche Zertifikate: kein privater Schlüssel, kein Geheimnis,
+kein Passwort. Sie dürfen in ein Repository, in ein Container-Image und in ein
+Ticket. Jeder kann sie bei D-Trust selbst herunterladen.
+
+  (a) pid-provider-root-test-ca-1-2026.crt
+      Die Wurzel, selbst signiert. Der eigentliche Vertrauensanker.
+      Subject : C=DE, O=D-Trust GmbH,
+                CN=Deutschland PID-Provider Root Test CA 1 2026
+      Seriennr: 63EA86D996736625F315B734F47A0F87
+      Gültig  : 19.05.2026 bis 19.05.2032
+      SHA-256 : 10:20:E9:D2:F8:48:0B:DA:E6:50:72:74:05:D4:3C:A2:
+                91:18:54:04:E6:D6:29:92:41:92:E5:DA:D9:8E:D3:04
+
+  (b) pid-signer-test-ca-1-26-1-2026.crt
+      Signiert den PID selbst. Wird gebraucht, weil die Wallet-Antwort nur das
+      Zertifikat des Signierers mitschickt und nicht den Weg nach oben.
+      Subject : C=DE, O=D-Trust GmbH,
+                CN=Deutschland PID-Signer Test CA 1-26-1 2026
+      Issuer  : ...Root Test CA 1 2026   (also von (a) signiert)
+      Seriennr: 73EFE93E0A16F9FE77B53CB5507DD7FC
+      Gültig  : 19.05.2026 bis 19.05.2031
+      SHA-256 : 5F:AC:A6:17:1F:D9:CD:BA:DF:3A:FE:D7:24:57:6B:52:
+                3B:8E:76:F7:C2:2F:4C:78:6E:72:F8:E5:03:B7:CB:AB
+
+  (c) pid-status-list-signer-test-ca-1-26-2-2026.crt
+      Signiert die Widerrufs-Statusliste. Für den Testlauf NICHT nötig, weil die
+      Widerrufsprüfung ausgeschaltet ist. Liegt bei, damit der Ordner den
+      Aussteller vollständig beschreibt.
+      Subject : C=DE, O=D-Trust GmbH,
+                CN=Deutschland PID-Status-List-Signer Test CA 1-26-2 2026
+      Issuer  : ...Root Test CA 1 2026   (also ebenfalls von (a) signiert)
+      Seriennr: 48161B2E487A04C57541FC24EADD3737
+      Gültig  : 19.05.2026 bis 19.05.2031
+      SHA-256 : 17:21:82:E2:5A:EE:26:AD:1D:D2:A6:80:F7:A8:57:3B:
+                14:F4:1A:EC:47:AD:A3:38:3A:13:CD:D8:A0:26:E5:76
+
+  Wichtig zu (c): dieses Zertifikat in den Trust Store zu legen behebt den
+  Fehler "status_invalid" NICHT. Das ist die erste Vermutung, die der Fehler
+  auslöst, und sie ist falsch. Die Begründung steht in der README des Samples
+  unter "Revocation is not checked".
+
+
+-------------------------------------------------------------------------------
+ 2. SELBST NACHPRÜFEN (optional, aber es kostet 30 Sekunden)
+-------------------------------------------------------------------------------
+
+Du musst mir nicht glauben, dass die Dateien echt sind. Zwei Wege:
+
+  Fingerprint vergleichen — muss mit der Liste oben übereinstimmen:
+
+      openssl x509 -inform DER -in pid-provider-root-test-ca-1-2026.crt \
+              -noout -fingerprint -sha256
+
+  Kette prüfen — beide Zweige müssen gegen die Wurzel aufgehen:
+
+      openssl x509 -inform DER -in pid-provider-root-test-ca-1-2026.crt   -out root.pem
+      openssl x509 -inform DER -in pid-signer-test-ca-1-26-1-2026.crt     -out signer.pem
+      openssl verify -CAfile root.pem signer.pem
+      # erwartet: signer.pem: OK
+
+  Neu herunterladen — das Script eine Ebene höher holt sie frisch und prüft die
+  Ketten selbst; es bricht ab, wenn etwas nicht aufgeht:
+
+      ./fetch-trust-anchors.sh ./trust-anchors
+
+  Die Adressen sind nicht geraten: jedes Zertifikat nennt das nächste darüber in
+  seiner eigenen Erweiterung "authorityInfoAccess". So wurden sie gefunden:
+
+      openssl x509 -inform DER -in <datei>.crt -noout -text \
+        | grep -A2 "Authority Information Access"
+
+
+-------------------------------------------------------------------------------
+ 3. WAS HIER NICHT LIEGT — und was du selbst brauchst
+-------------------------------------------------------------------------------
+
+Für einen Testlauf fehlen zwei Dinge, die ich nicht beilegen kann und nicht
+beilegen darf. Sie identifizieren DICH als Prüfstelle; wer sie hat, kann in
+deinem Namen Ausweisdaten anfragen.
+
+  (1) Das Zugriffszertifikat (Access Certificate) als .p12-Datei
+      PLUS dessen Passwort.
+
+      >>> Doch, das Passwort wird gebraucht. <<<
+      Die .p12-Datei enthält den PRIVATEN SCHLÜSSEL, mit dem der Verifier seine
+      Anfrage signiert. Ohne diese Signatur öffnet die Wallet die Anfrage nicht
+      einmal. Das Passwort schützt diesen Schlüssel in der Datei — ohne Passwort
+      kommt die Anwendung nicht an den Schlüssel, und es gibt keinen Verifier.
+
+      Zwei Zertifikate müssen in der Datei sein, nicht eines: dein eigenes UND
+      das der CA, die es ausgestellt hat. Warum, und wie man es prüft, steht in
+      SCHRITT-FUER-SCHRITT.md, Schritt 4. Das ist der Fehler, der einen
+      kompletten Testlauf kostet, weil er erst in der Wallet auffällt.
+
+      Woher: SPRIND-Sandbox, https://sandbox.eudi-wallet.org/
+
+  (2) Das Registrierungszertifikat (Registration Certificate), ein langer
+      Text in einer Zeile (ein JWT, drei mit Punkt getrennte Blöcke).
+
+      Es sagt, WELCHE Attribute du fragen darfst. Es ist kein Geheimnis im
+      kryptografischen Sinn — es wird in der Anfrage an die Wallet geschickt —
+      aber es ist auf dich ausgestellt. Es muss unverändert durchgereicht
+      werden, Byte für Byte, weil die Wallet eine Signatur über genau diese
+      Zeichen prüft. Kein Umbruch, kein Leerzeichen, nichts "aufräumen".
+
+      Woher: ebenfalls SPRIND-Sandbox, zusammen mit (1).
+
+  Was du mit (1) und (2) NICHT tun solltest:
+    - nicht ins Git-Repository legen (der Ordner "cert/" ist genau dafür
+      ignoriert)
+    - nicht in ein Container-Image kopieren, sondern zur Laufzeit einhängen
+    - das Passwort nicht in die Kommandozeile tippen, wo es in der History
+      landet, sondern openssl danach fragen lassen
+
+===============================================================================
+ Stand: 11.11.2026 — gegen einen echten Testlauf mit der deutschen EUDI-Wallet
+ geprüft. Es sind TEST-Anchors. Ein Produktivbetrieb nimmt die Produktiv-
+ Hierarchie und holt sie aus der veröffentlichten Trust List, nicht über
+ authorityInfoAccess.
+===============================================================================

@@ -1,4 +1,4 @@
-# German PID verifier without a backend
+﻿# German PID verifier without a backend
 
 A verifier for the German EUDI Wallet that needs **no `eudi-srv-verifier-endpoint` container**.
 One NuGet package hosts the request and response endpoints and verifies the presentation in
@@ -11,6 +11,13 @@ one does it with one container instead of two and no JVM.
 Two gaps separate it from a production path, both documented below and neither hidden:
 revocation is not checked, and the registration certificate needs a request builder of our own
 until the upstream change lands.
+
+> **New to EUDI wallets?** [`SCHRITT-FUER-SCHRITT.md`](SCHRITT-FUER-SCHRITT.md) walks through a
+> test run command by command, in German, and says after every step what you must see — including
+> the one check that saves a wasted scan. The trust anchors it needs are already in
+> [`trust-anchors/`](trust-anchors/); what is in that folder, and what you must bring yourself, is
+> in [`trust-anchors/LIESMICH.txt`](trust-anchors/LIESMICH.txt). This README is the shorter path
+> if you know the protocols.
 
 ## What it is made of
 
@@ -121,7 +128,8 @@ outside name.
 dotnet run --project samples/GermanPidTessioVerifier
 ```
 
-Then open the root path. The hosted pages render the QR code and poll the session themselves.
+It listens on `http://localhost:5000` — there is no `launchSettings.json`, so that is the Kestrel
+default. Then open the root path. The hosted pages render the QR code and poll the session themselves.
 
 | Endpoint | Purpose |
 |---|---|
@@ -170,7 +178,7 @@ callback because the store must also implement `IStateCorrelatingSessionStore` a
 hosted status endpoint withholds failure messages by design, and guessing costs a scan each time.
 
 For a one-off test without touching a production deployment, a temporary tunnel is enough:
-`cloudflared tunnel --url http://localhost:5199`, then set `GermanPid__PublicBaseUrl` to the URL
+`cloudflared tunnel --url http://localhost:5000`, then set `GermanPid__PublicBaseUrl` to the URL
 it prints — or use the `docker-compose.yml` next to this file, which wires both up. The wallet has
 to reach `request_uri` and `response_uri` over the internet, so localhost will not do.
 
