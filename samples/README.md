@@ -15,16 +15,16 @@ a published package and the sample never silently picks up unreleased source cha
 ## There is a second sample, without a backend
 
 [`GermanPidTessioVerifier/`](GermanPidTessioVerifier) reads the same German PID with **no verifier
-backend at all** — no `eudi-srv-verifier-endpoint` container. It uses
-[`Tessio.Verifier.AspNetCore`](https://github.com/tripledownab/tessio-verifier), a .NET verifier that
-hosts the request and response endpoints and verifies the presentation in process, and supplies the
-one piece that package is still missing: a request object carrying the registration certificate in
-`verifier_info`.
+backend at all** — no `eudi-srv-verifier-endpoint` container. Same package, different call:
+`AddInProcessVerifier()` and `MapInProcessVerifier()` instead of a backend URL. The package hosts
+the endpoints the wallet calls and verifies the presentation in process, using
+[`Tessio.Verifier`](https://github.com/tripledownab/tessio-verifier) for the protocol work.
 
 Which to use:
 
 | | `GermanPidVerifier` | `GermanPidTessioVerifier` |
 |---|---|---|
+| NuGet package | `miEUDIverifier.Core` 2.0.0 | `miEUDIverifier.Core` 2.0.0 |
 | Verifier backend | the Kotlin reference container | none |
 | Access and registration certificate | in the backend's configuration | in the application's configuration |
 | Credential format | `mso_mdoc` or `dc+sd-jwt`, either/or | `mso_mdoc` |
@@ -45,10 +45,13 @@ Both need the same two certificates, which is the part no library removes.
 Since 2026-11-11 this repository's own web app takes the backend-free path for the German
 ecosystem, so what the second sample demonstrates is also what runs at
 [mieudiverifier.mitterbucher.com](https://mieudiverifier.mitterbucher.com/?backend=de). The
-library's version of it lives in
-[`src/miEUDIverifier.Core/Services/Tessio/`](../src/miEUDIverifier.Core/Services/Tessio/); the
-sample keeps its own copy of the request builder deliberately, so that it depends on one NuGet
-package and nothing else.
+code behind it lives in
+[`src/miEUDIverifier.Core/Services/Tessio/`](../src/miEUDIverifier.Core/Services/Tessio/) and the
+sample consumes it from NuGet like any other caller — no project reference, which is why neither
+sample is part of `miEUDIverifier.sln`.
+
+Both samples therefore show the same package from its two sides. The difference in their
+`Program.cs` is one registration call and the five inputs the in-process path needs.
 
 ## What you need first
 

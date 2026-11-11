@@ -8,9 +8,8 @@ Compare `../GermanPidVerifier`, which does the same job through `miEUDIverifier.
 Kotlin reference backend. Both have now completed a presentation from the real German wallet; this
 one does it with one container instead of two and no JVM.
 
-Two gaps separate it from a production path, both documented below and neither hidden:
-revocation is not checked, and the registration certificate needs a request builder of our own
-until the upstream change lands.
+One gap separates it from a production path, documented below and not hidden: revocation is not
+checked.
 
 > **New to EUDI wallets?** [`SCHRITT-FUER-SCHRITT.md`](SCHRITT-FUER-SCHRITT.md) walks through a
 > test run command by command, in German, and says after every step what you must see — including
@@ -21,47 +20,61 @@ until the upstream change lands.
 
 ## What it is made of
 
+One package from NuGet, and no project reference into this repository — the sample consumes the
+published package exactly as any other consumer would, which is also why it is not part of
+`miEUDIverifier.sln`:
+
+```xml
+<PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
 ```
-Tessio.Verifier.AspNetCore 0.30.2     the hosted endpoints, the request object, the verification
-RegistrationCertificateRequestBuilder what this sample adds: one claim, and a second signature
-AccessCertificateChain                reads the access certificate and its issuers out of a PKCS#12
+
+Two calls are the whole integration:
+
+```csharp
+builder.Services.AddInProcessVerifier(new InProcessVerifierOptions { /* five inputs */ });
+
+app.UseForwardedHeaders();   // behind a proxy or tunnel
+app.MapInProcessVerifier();  // the endpoints the wallet itself calls
 ```
 
-`AddTessioVerifier` registers its services with `TryAdd`, so anything registered **before** it
-wins. This sample replaces two defaults:
+Everything specific to the German ecosystem lives in the package: the registration certificate in
+`verifier_info`, the certificate path in `x5c`, the encrypted response, the DCQL query, the trust
+resolution and the verification itself. It pulls in `Tessio.Verifier.AspNetCore`, which does the
+protocol work.
 
-| Default | Replaced by | Why |
-|---|---|---|
-| `DemoPresentationRequestBuilder` | `RegistrationCertificateRequestBuilder`, which **wraps** the library's own `SignedPresentationRequestBuilder` | 0.30.2 cannot put a registration certificate in `verifier_info`, and the German wallet refuses a request without one |
-| `DevDefaultTrustListResolver` | `StaticTrustListResolver` over your anchor folder | the default trusts the library's own mock issuers and nothing else |
+What is left in `Program.cs` is the five inputs only you can supply, and a page to show the result
+on — about a hundred lines, most of it the page. That page is deliberately the sample's own rather
+than the library's hosted demo page, because it shows what an integration actually looks like:
 
-`MdocVerifier` is also re-registered, to turn `CheckStatus` **off**. That is a real gap, not a
-preference — a revoked PID is accepted here. [Revocation](#revocation-is-not-checked) says why it
-cannot currently be on, and it is not a reason to copy the setting without reading that.
+```csharp
+var transaction = await verifier.InitializeTransactionAsync();
+var qr          = QrCodeService.GeneratePng(transaction.BuildWalletDeepLink());
+var envelope    = await verifier.WaitForWalletResponseAsync(transaction.TransactionId);
+var identity    = await verifier.ExtractIdentityDataAsync(envelope, options: null);
+```
 
-### Why a request builder of our own
+### What used to be here
 
-The registration certificate travels in the `verifier_info` claim, which is **inside** the
-signature, so it cannot be bolted on afterwards. Release 0.30.2 has no option for it. That is
-[issue 185](https://github.com/tripledownab/tessio-verifier/issues/185) upstream, with
-[pull request 187](https://github.com/tripledownab/tessio-verifier/pull/187) pending. **When that
-lands, delete `RegistrationCertificateRequestBuilder.cs`** and register Tessio's own
-`SignedPresentationRequestBuilder` with `VerifierInfoJson` instead.
+Earlier versions of this sample carried two files of their own,
+`RegistrationCertificateRequestBuilder.cs` and `AccessCertificateChain.cs`, because the
+registration certificate travels in the `verifier_info` claim — inside the signature, so it cannot
+be bolted on afterwards — and Tessio 0.30.2 has no option for it
+([issue 185](https://github.com/tripledownab/tessio-verifier/issues/185), with
+[pull request 187](https://github.com/tripledownab/tessio-verifier/pull/187) pending).
 
-Until then, the builder does the least it can get away with: it lets the library build and sign
-the request, then takes the result apart, adds the one claim, and signs the payload again under
-**the library's own JOSE header, reused byte for byte**. The claim set, the `typ`, the `x5c` chain
-and the certificate path rules all stay the library's. Roughly thirty lines are ours.
+Both now live in the package, under
+[`src/miEUDIverifier.Core/Services/Tessio/`](../../src/miEUDIverifier.Core/Services/Tessio/). One
+lesson from them is worth keeping where a reader will meet it: the builder deliberately lets the
+library build and sign the request and then re-signs it with one claim added, reusing the library's
+own JOSE header byte for byte. The first version did the opposite — assembled the claim set and
+header itself — and was already wrong in a way only a wallet would have shown: it put a single
+certificate in `x5c`, while HAIP 1.0 section 5 and ETSI TS 119 472-2 clause 6.4.2 require the
+access certificate *and its path up to, but excluding, the trust anchor*. The reference
+implementation sends two; a wallet handed only the leaf may be unable to reach its own trust list.
 
-That is worth saying because the first version of this file did the opposite -- assembled the
-whole claim set and the header itself -- and was already wrong in a way only a wallet would have
-shown: it put a single certificate in `x5c`, while HAIP 1.0 section 5 and ETSI TS 119 472-2
-clause 6.4.2 require the access certificate *and its path up to, but excluding, the trust anchor*.
-The reference implementation sends two. A wallet handed only the leaf may be unable to reach its
-own trust list.
-
-The claim set was compared against a request object the reference implementation emitted for the
-same presentation. They match claim for claim; this sample additionally sets `exp`.
+Revocation is off in the package's default, and that is a real gap rather than a preference — a
+revoked PID is accepted. [Revocation](#revocation-is-not-checked) says why it cannot currently be
+on, and it is not a reason to copy the setting without reading that.
 
 ## The three things you must supply
 
@@ -129,15 +142,34 @@ dotnet run --project samples/GermanPidTessioVerifier
 ```
 
 It listens on `http://localhost:5000` — there is no `launchSettings.json`, so that is the Kestrel
-default. Then open the root path. The hosted pages render the QR code and poll the session themselves.
+default. Open the root path; the page renders the QR code and polls for the result.
+
+The sample's own routes:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /verify/start` | creates a session, renders the QR page |
-| `GET /verify/request/{id}` | serves the signed JAR to the wallet |
+| `GET /` | starts a verification if none is running, shows the QR code |
+| `GET /status` | the result as JSON, which the page polls |
+| `POST /new` | discards the current verification and starts another |
+
+What `MapInProcessVerifier()` adds, for the wallet rather than for you:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /verify/jar/{id}` | serves the signed request object to the wallet |
 | `POST /verify/callback` | receives the encrypted response (`direct_post.jwt`) |
-| `GET /verify/{sessionId}` | session status as JSON |
+| `GET /verify/{sessionId}` | session status as JSON, anonymous surface |
 | `GET /verify/{sessionId}/stream` | the same as server-sent events |
+| `GET /verify/{sessionId}/return` | where the wallet sends the phone afterwards |
+| `GET /verify/start` | redirected to `/` — see below |
+
+The request object is served from `/verify/jar/{id}` rather than the library's own
+`/verify/request/{id}`, because Tessio keeps the store behind that route internal to its package; a
+host that creates its own sessions therefore serves the JAR itself.
+
+`/verify/start` is the library's hosted demo page. It would create a session whose request object
+it files where this host does not look, so `MapInProcessVerifier()` shadows it and redirects to
+`/`. That is why this sample has a page of its own.
 
 ## What was verified, and what was not
 
@@ -344,6 +376,22 @@ here.
 
 ## Requesting different attributes
 
-`options.RequestedClaims` in `Program.cs`. Keep it inside what the registration certificate
-grants, and remember the certificate needs one claim entry per attribute, mdoc entries carrying
-the namespace as their first path segment. See `../../docs/german-pid-presentation.md`.
+The package asks for the seven PID attributes by default. To change that, set `RequestedClaims` on
+the options in `Program.cs`:
+
+```csharp
+builder.Services.AddInProcessVerifier(new InProcessVerifierOptions
+{
+    // …
+    RequestedClaims = ["family_name", "given_name", "birth_date"],
+});
+```
+
+Keep the list inside what the registration certificate grants. **One attribute more and the German
+wallet drops the request with no consent screen** — which looks like a certificate fault and is
+not one. The certificate itself needs one claim entry per attribute, mdoc entries carrying the
+namespace as their first path segment; see
+[`../../docs/german-pid-presentation.md`](../../docs/german-pid-presentation.md).
+
+A different credential type needs `DocType` and `MdocNamespace` too. For the EUDI PID the two are
+the same string, which is a coincidence of that credential rather than a rule.

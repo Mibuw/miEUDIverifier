@@ -9,8 +9,13 @@
 
   <ItemGroup>
     <!-- The only dependency, and no verifier backend behind it: this package hosts the request
-         and response endpoints and verifies the presentation in process. -->
-    <PackageReference Include="Tessio.Verifier.AspNetCore" Version="0.30.2" />
+         and response endpoints and verifies the presentation in process. It pulls in
+         Tessio.Verifier, which does the protocol work.
+
+         No project reference into this repository on purpose: the sample consumes the published
+         package exactly as any other consumer would, so it cannot quietly rely on unreleased
+         source. That also means it is not part of miEUDIverifier.sln. -->
+    <PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
   </ItemGroup>
 
 </Project>

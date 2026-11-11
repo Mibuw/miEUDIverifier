@@ -656,7 +656,7 @@ miEUDIverifier/
 ├── samples/
 │   ├── README.md                            # Endpoint, certificates, response URL
 │   ├── GermanPidVerifier/                   # ASP.NET Core app, NuGet package only
-│   └── GermanPidTessioVerifier/             # The same, with no verifier backend
+│   └── GermanPidTessioVerifier/             # The same package, no verifier backend
 └── src/
     ├── miEUDIverifier/                      # ASP.NET Core web app (Minimal API)
     │   ├── miEUDIverifier.csproj

@@ -86,8 +86,12 @@ dotnet build
 ```
 
 **Was du sehen musst:** `Der Buildvorgang wurde erfolgreich ausgeführt.` bzw.
-`Build succeeded.` — und `0 Fehler`. Das lädt beim ersten Mal ein Paket aus dem Internet
-(`Tessio.Verifier.AspNetCore`), das kann eine Minute dauern.
+`Build succeeded.` — und `0 Fehler`. Das lädt beim ersten Mal `miEUDIverifier.Core` aus dem
+Internet (und damit `Tessio.Verifier.AspNetCore`), das kann eine Minute dauern.
+
+Das Sample hat **keinen** Projektverweis in dieses Repository: es benutzt das veröffentlichte
+NuGet-Paket, genau wie jeder andere Konsument. Deswegen gehört es auch nicht zu
+`miEUDIverifier.sln`.
 
 ---
 
@@ -344,19 +348,30 @@ Die zwei Unterstriche sind kein Tippfehler: `__` trennt in .NET die Konfiguratio
 dotnet run
 ```
 
-**Was du sehen musst** — diese Zeile ist die Erfolgsmeldung:
+**Was du sehen musst** — vier Zeilen, in dieser Reihenfolge:
 
 ```
-German PID verifier ready. client_id x509_hash:…, 2 certificate(s) in x5c,
-3 issuer trust anchor(s) from …/trust-anchors.
-Now listening on: http://localhost:5000
+info: In-process verifier hosted under /verify: request objects at /verify/jar/{id},
+      wallet callback at https://…trycloudflare.com/verify/callback, revocation checking OFF.
+warn: Revocation is NOT checked on the in-process path: a revoked PID is accepted.
+info: Access certificate in use: client_id x509_hash:…
+info: Now listening on: http://localhost:5000
 ```
 
-Prüfe diese drei Dinge in der Zeile:
+Prüfe daran drei Dinge:
 
-- **`2 certificate(s) in x5c`** — steht dort `1`, geh zurück zu [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart). Scanne jetzt nicht.
-- **`3 issuer trust anchor(s)`** — steht dort `0`, stimmt der Ordnerpfad nicht.
-- **`client_id x509_hash:…`** — kommt aus deinem Zertifikat. Bleibt gleich, solange das Zertifikat gleich bleibt.
+- **die Adresse hinter `wallet callback at`** muss deine Tunnel-Adresse sein und mit `https`
+  beginnen. Steht dort `http` oder `localhost`, stimmt `PublicBaseUrl` nicht — die Wallet würde die
+  Antwort verweigern.
+- **`client_id x509_hash:…`** kommt aus deinem Zertifikat. Bleibt gleich, solange das Zertifikat
+  gleich bleibt; genau diesen Wert will ein Registrar von dir.
+- **die `warn`-Zeile zur Revocation gehört dort hin.** Sie ist kein Fehler, sondern der Hinweis auf
+  die eine Lücke dieses Weges, siehe die README des Samples.
+
+Die Anzahl der Zertifikate im `x5c` steht hier **nicht** — das Paket leitet sie selbst ab. Deshalb
+war [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart) wichtig: dort hast du
+vor dem Start geprüft, dass die CA in der `.p12` steckt. Hast du ihn übersprungen, hol ihn jetzt
+nach, bevor du scannst.
 
 Dann im Browser öffnen:
 
@@ -375,16 +390,23 @@ http://localhost:5000
 3. Die Wallet zeigt, wer fragt und welche Daten — **bestätigen**.
 4. Am Computer wechselt die Seite auf `Verified ✓` und zeigt die Attribute.
 
-Im Terminal steht dann:
+Im Terminal stehen dann zwei Zeilen — eine von der Bibliothek, eine vom Sample:
 
 ```
-Session … completed: credential valid
-  (issuer SERIALNUMBER=…, CN=pp_pid_auth_crt, O=Bundesdruckerei GmbH, C=DE, key via x5c)
+info: Session … completed: credential valid
+      (issuer SERIALNUMBER=…, CN=pp_pid_auth_crt, O=Bundesdruckerei GmbH, C=DE, key via x5c)
+info: Identity received: Erika Mustermann, born 1964-08-12
 ```
 
-`credential valid` und `key via x5c` sind die beiden Wörter, auf die es ankommt: die Präsentation
-wurde geprüft, und der Aussteller wurde über die mitgeschickte Zertifikatskette als
-vertrauenswürdig erkannt.
+In der ersten sind `credential valid` und `key via x5c` die Wörter, auf die es ankommt: die
+Präsentation wurde geprüft, und der Aussteller wurde über die mitgeschickte Zertifikatskette als
+vertrauenswürdig erkannt. Die zweite ist der Beweis, dass die Attribute auch bei dir angekommen
+und zugeordnet sind.
+
+Ging etwas schief, steht statt der zweiten Zeile eine `warn`-Zeile mit **Code und Meldung**, zum
+Beispiel `Presentation refused: mdoc_digest_mismatch: …`. Das ist ein Unterschied zum gehosteten
+Statusendpunkt der Bibliothek, der Meldungen absichtlich zurückhält: hier bekommst du sie, weil das
+Sample sie direkt aus der Antwort liest.
 
 ---
 
