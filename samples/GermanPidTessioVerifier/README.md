@@ -25,7 +25,7 @@ published package exactly as any other consumer would, which is also why it is n
 `miEUDIverifier.sln`:
 
 ```xml
-<PackageReference Include="miEUDIverifier.Core" Version="2.0.1" />
+<PackageReference Include="miEUDIverifier.Core" Version="2.1.0" />
 ```
 
 Two calls are the whole integration:

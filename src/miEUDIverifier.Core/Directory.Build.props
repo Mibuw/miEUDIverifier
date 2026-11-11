@@ -3,7 +3,7 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>2.0.1</VersionPrefix>
+    <VersionPrefix>2.1.0</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
     <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data over OpenID4VP, two ways behind one contract: in process with no verifier backend (hosting the wallet-facing endpoints and verifying the presentation itself, for an ecosystem whose relying-party access certificate you hold), or through the EUDI Verifier Backend REST API. Builds the DCQL request (mso_mdoc and SD-JWT VC), waits for the wallet response and extracts the identity data, including SD-JWT disclosure parsing. Requires the ASP.NET Core shared framework.</Description>
@@ -14,6 +14,16 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+2.1.0 — Ships net10.0 as well as net8.0.
+A net10.0 application given the net8.0 asset built fine and then threw on startup:
+"Could not load file or assembly 'Microsoft.Bcl.Cryptography'". X509CertificateLoader comes from
+that package under net8.0, and the assembly is not there to load under net10.0 — so the failure
+appeared at runtime, in the first call that reads a trust anchor, with nothing at build time to
+warn about it. `dotnet new web` on the current SDK produces exactly such a project, which makes
+this the default experience rather than an edge case.
+The package now targets net8.0 and net10.0, which is what Tessio.Verifier already did. Nothing
+changes for a net8.0 consumer, and the test suite runs against both.
+
 2.0.1 — Two fixes found by integrating the package into an application that already existed,
 rather than into a sample written around it.
 RequestedClaims no longer silently grows. It was a collection property with seven defaults, and

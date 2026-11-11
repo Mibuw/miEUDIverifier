@@ -1,7 +1,12 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Both, because the package would otherwise hand a net10.0 application the net8.0 asset,
+         which fails at RUNTIME rather than at build: X509CertificateLoader comes from
+         Microsoft.Bcl.Cryptography on net8.0, and that assembly is not there to load under
+         net10.0. A fresh `dotnet new web` on the current SDK produces exactly that project.
+         Tessio.Verifier ships both frameworks, so this only follows it. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>12</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
