@@ -15,7 +15,7 @@
          No project reference into this repository on purpose: the sample consumes the published
          package exactly as any other consumer would, so it cannot quietly rely on unreleased
          source. That also means it is not part of miEUDIverifier.sln. -->
-    <PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
+    <PackageReference Include="miEUDIverifier.Core" Version="2.0.1" />
   </ItemGroup>
 
 </Project>

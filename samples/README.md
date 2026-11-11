@@ -6,7 +6,7 @@ settings in the web server's own configuration. It has **no project reference in
 repository** — it pulls the library from NuGet exactly as any other consumer would:
 
 ```xml
-<PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
+<PackageReference Include="miEUDIverifier.Core" Version="2.0.1" />
 ```
 
 It is deliberately **not** part of `miEUDIverifier.sln`, so building the repository never depends on
@@ -24,7 +24,7 @@ Which to use:
 
 | | `GermanPidVerifier` | `GermanPidTessioVerifier` |
 |---|---|---|
-| NuGet package | `miEUDIverifier.Core` 2.0.0 | `miEUDIverifier.Core` 2.0.0 |
+| NuGet package | `miEUDIverifier.Core` 2.0.1 | `miEUDIverifier.Core` 2.0.1 |
 | Verifier backend | the Kotlin reference container | none |
 | Access and registration certificate | in the backend's configuration | in the application's configuration |
 | Credential format | `mso_mdoc` or `dc+sd-jwt`, either/or | `mso_mdoc` |

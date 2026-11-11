@@ -1,4 +1,4 @@
-using System.Security.Cryptography.X509Certificates;
+﻿using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -46,6 +46,13 @@ public static class TessioVerifierExtensions
 
         var publicBaseUrl = options.PublicBaseUrl.TrimEnd('/');
         var routePrefix = NormalizePrefix(options.RoutePrefix);
+
+        // Resolved once, here, rather than defaulted on the property: see the remarks on
+        // InProcessVerifierOptions.RequestedClaims for why a pre-filled collection property is a
+        // trap when a host binds these options from configuration.
+        var requestedClaims = options.RequestedClaims is { Count: > 0 } configured
+            ? configured
+            : InProcessVerifierOptions.DefaultRequestedClaims;
 
         // The whole chain, not only the leaf. SPEC: HAIP 1.0 section 5 and ETSI TS 119 472-2 clause
         // 6.4.2 want the access certificate AND its path up to, but excluding, the trust anchor in
@@ -97,7 +104,7 @@ public static class TessioVerifierExtensions
             verifier.CredentialFormat = MdocVerifier.Format;
             verifier.ExpectedDocType = options.DocType;
             verifier.MdocNamespace = options.MdocNamespace;
-            verifier.RequestedClaims = options.RequestedClaims.ToList();
+            verifier.RequestedClaims = requestedClaims.ToList();
             verifier.ResponseMode = options.ResponseMode;
             verifier.SessionLifetime = options.SessionLifetime;
 
@@ -110,7 +117,7 @@ public static class TessioVerifierExtensions
         {
             DocType = options.DocType,
             MdocNamespace = options.MdocNamespace,
-            RequestedClaims = options.RequestedClaims,
+            RequestedClaims = requestedClaims,
             // Where the library hosts the wallet callback under the prefix set above.
             ResponseUri = new Uri($"{publicBaseUrl}{routePrefix}/callback"),
             ResponseMode = options.ResponseMode,
@@ -156,10 +163,25 @@ public static class TessioVerifierExtensions
             await next(context).ConfigureAwait(false);
         });
 
-        app.MapTessioVerifier(prefix);
+        // A wallet cannot sign in, so none of the endpoints below may require it. Without this, an
+        // application with a fallback authorization policy -- "every endpoint needs an
+        // authenticated user", which is a common and otherwise sensible default -- answers the
+        // wallet's fetch of the request object with a 302 to its login page, and the presentation
+        // never happens. Confirmed against such an application before this was added.
+        //
+        // A group with an empty prefix is used because the library's own endpoints are mapped by
+        // MapTessioVerifier, which returns no convention builder to mark them through. Anything
+        // mapped into this group carries the metadata.
+        //
+        // This widens nothing that was protected: these endpoints are the wallet-facing protocol
+        // surface and are anonymous by design. The session status endpoint among them discloses a
+        // result to whoever holds a session id, which is the library's documented contract.
+        var wallet = app.MapGroup(string.Empty).AllowAnonymous();
+
+        wallet.MapTessioVerifier(prefix);
 
         // The signed request object, which the wallet fetches from the request_uri in the deep link.
-        app.MapGet($"{prefix}/jar/{{requestId}}", (string requestId, HostedRequestObjects store, HttpContext http) =>
+        wallet.MapGet($"{prefix}/jar/{{requestId}}", (string requestId, HostedRequestObjects store, HttpContext http) =>
         {
             var jar = store.Get(requestId);
             if (jar is null)

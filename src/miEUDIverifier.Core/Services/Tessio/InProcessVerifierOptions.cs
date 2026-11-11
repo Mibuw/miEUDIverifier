@@ -58,11 +58,25 @@ public sealed class InProcessVerifierOptions
     public string MdocNamespace { get; set; } = "eu.europa.ec.eudi.pid.1";
 
     /// <summary>
-    /// The attributes to request. Must stay within what the registration certificate grants: one
-    /// attribute more and the German wallet drops the request with no consent screen, which looks
-    /// like a certificate fault and is not one.
+    /// The attributes to request, or null for <see cref="DefaultRequestedClaims"/>. Must stay within
+    /// what the registration certificate grants: one attribute more and the German wallet drops the
+    /// request with no consent screen, which looks like a certificate fault and is not one.
     /// </summary>
-    public IReadOnlyList<string> RequestedClaims { get; set; } =
+    /// <remarks>
+    /// Null rather than pre-filled, and that is not a style choice. .NET's configuration binder
+    /// ADDS to a collection property that already holds items instead of replacing it, so a
+    /// pre-filled default plus three claims in appsettings.json produced a request for ten. In this
+    /// domain that is not a cosmetic bug: asking for more than the registration certificate grants
+    /// makes the wallet refuse silently. Null cannot be appended to, so what is configured is what
+    /// is requested.
+    /// </remarks>
+    public IReadOnlyList<string>? RequestedClaims { get; set; }
+
+    /// <summary>
+    /// What <see cref="RequestedClaims"/> falls back to: the seven PID attributes this project's
+    /// registration certificate covers.
+    /// </summary>
+    public static IReadOnlyList<string> DefaultRequestedClaims { get; } =
     [
         "family_name",
         "given_name",
@@ -147,10 +161,13 @@ public sealed class InProcessVerifierOptions
                 + "must be set. The German wallet drops a request that carries none.");
         }
 
-        if (RequestedClaims.Count == 0)
+        // Empty is refused, null is not: null means "use the default", an empty list means a caller
+        // built one and lost its contents on the way, which would ask the wallet for nothing.
+        if (RequestedClaims is { Count: 0 })
         {
             throw new InvalidOperationException(
-                $"'{nameof(RequestedClaims)}' is empty, so the wallet would be asked for nothing.");
+                $"'{nameof(RequestedClaims)}' is empty, so the wallet would be asked for nothing. "
+                + $"Leave it unset for the default ({nameof(DefaultRequestedClaims)}).");
         }
 
         if (!Directory.Exists(IssuerTrustAnchorDirectory))

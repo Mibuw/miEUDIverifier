@@ -25,7 +25,7 @@ published package exactly as any other consumer would, which is also why it is n
 `miEUDIverifier.sln`:
 
 ```xml
-<PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
+<PackageReference Include="miEUDIverifier.Core" Version="2.0.1" />
 ```
 
 Two calls are the whole integration:
@@ -209,10 +209,14 @@ callback because the store must also implement `IStateCorrelatingSessionStore` a
 `ISameDeviceSessionStore`. The `/diagnostics/session/{id}` endpoint exists because of that: the
 hosted status endpoint withholds failure messages by design, and guessing costs a scan each time.
 
-For a one-off test without touching a production deployment, a temporary tunnel is enough:
-`cloudflared tunnel --url http://localhost:5000`, then set `GermanPid__PublicBaseUrl` to the URL
-it prints — or use the `docker-compose.yml` next to this file, which wires both up. The wallet has
-to reach `request_uri` and `response_uri` over the internet, so localhost will not do.
+For a one-off test, a temporary tunnel is enough: `cloudflared tunnel --url http://localhost:5000`,
+then set `GermanPid__PublicBaseUrl` to the URL it prints. The wallet has to reach `request_uri` and
+`response_uri` over the internet, so localhost will not do. An application that is already deployed
+needs no tunnel — its own public address is what goes in `PublicBaseUrl`.
+
+There is no Dockerfile here on purpose. This is a library you add to a web application you already
+have, not a service to stand up beside it; what that looks like is
+[Einbau in eine bestehende Web-Anwendung](SCHRITT-FUER-SCHRITT.md#einbau-in-eine-bestehende-web-anwendung).
 
 ## A page opens on the phone afterwards
 

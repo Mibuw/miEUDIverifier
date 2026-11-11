@@ -1,9 +1,9 @@
-<Project>
+﻿<Project>
   <!-- NuGet package metadata for miEUDIverifier.Core (used by dotnet pack) -->
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>2.0.0</VersionPrefix>
+    <VersionPrefix>2.0.1</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
     <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data over OpenID4VP, two ways behind one contract: in process with no verifier backend (hosting the wallet-facing endpoints and verifying the presentation itself, for an ecosystem whose relying-party access certificate you hold), or through the EUDI Verifier Backend REST API. Builds the DCQL request (mso_mdoc and SD-JWT VC), waits for the wallet response and extracts the identity data, including SD-JWT disclosure parsing. Requires the ASP.NET Core shared framework.</Description>
@@ -14,6 +14,22 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+2.0.1 — Two fixes found by integrating the package into an application that already existed,
+rather than into a sample written around it.
+RequestedClaims no longer silently grows. It was a collection property with seven defaults, and
+.NET's configuration binder ADDS to such a property instead of replacing it: three claims in
+appsettings.json produced a request for ten. In this domain that is not cosmetic — asking for more
+than the registration certificate grants makes the German wallet drop the request with no consent
+screen, which reads like a certificate fault. The property is now nullable with no default, and
+InProcessVerifierOptions.DefaultRequestedClaims is applied when it is left unset. An empty list is
+refused, because that would ask the wallet for nothing. A caller that assigned the property
+explicitly is unaffected.
+The wallet-facing endpoints are now marked AllowAnonymous. A wallet cannot sign in, so an
+application with a fallback authorization policy — "every endpoint needs an authenticated user",
+a common and otherwise sensible default — answered the wallet's fetch of the request object with a
+302 to its login page, and no presentation could complete. This widens nothing that was protected:
+those endpoints are the wallet-facing protocol surface and are anonymous by design.
+
 2.0.0 — Verify a presentation in process, with no verifier backend.
 Whatever signs the request objects is the verifier. Where you hold the relying-party access
 certificate yourself, a verifier backend is a container doing work your own process can do — so

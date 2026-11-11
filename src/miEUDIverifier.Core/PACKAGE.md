@@ -88,6 +88,24 @@ var tx       = await verifier.InitializeTransactionAsync();
 > it on, and its documentation explains what then happens and what was ruled out. Tell your users
 > what you do and do not check.
 
+### Adding this to an application that already exists
+
+`MapInProcessVerifier()` adds the routes a **wallet** calls, not a user interface. Three things are
+worth knowing before you wire it in:
+
+- **A wallet cannot sign in.** The endpoints are marked `AllowAnonymous`, so an application with a
+  fallback authorization policy — "every endpoint needs an authenticated user" — does not redirect
+  the wallet to its login page. Your own endpoints stay protected.
+- **Bind the options from configuration**, and note that `RequestedClaims` replaces the default
+  rather than adding to it. Leave it unset for the seven PID attributes
+  (`InProcessVerifierOptions.DefaultRequestedClaims`). Asking for more than your registration
+  certificate grants makes the wallet drop the request with no consent screen.
+- **`{prefix}/start` is redirected to `/`.** It is the underlying library's demo page, which cannot
+  work in a host that creates its own sessions. Do not point `/` back at it.
+
+`WaitForWalletResponseAsync` blocks until the wallet answers or the session expires, so call it off
+the request thread and keep the transaction id in the user's session.
+
 ## Configuration (`VerifierSettings` section)
 
 ```json

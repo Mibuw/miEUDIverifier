@@ -27,8 +27,7 @@ Rechne mit 30–45 Minuten, wenn du die Zertifikate schon hast.
 10. [Scannen](#10-scannen)
 11. [Was danach auf dem Handy passiert](#11-was-danach-auf-dem-handy-passiert)
 12. [Wenn etwas schiefgeht](#wenn-etwas-schiefgeht)
-13. [Variante: mit Docker statt .NET](#variante-mit-docker-statt-net)
-14. [In die eigene Anwendung einbauen](#in-die-eigene-anwendung-einbauen)
+13. [Einbau in eine bestehende Web-Anwendung](#in-die-eigene-anwendung-einbauen)
 
 ---
 
@@ -473,111 +472,158 @@ $env:Logging__LogLevel__Tessio = "Debug"
 
 ---
 
-## Variante: mit Docker statt .NET
 
-Wenn du kein .NET installieren willst. Im Ordner liegen `Dockerfile` und `docker-compose.yml`; die
-Compose-Datei startet den Tunnel gleich mit.
+## Einbau in eine bestehende Web-Anwendung
 
-```bash
-# 1. Bauen
-docker build -t germanpid-tessio-verifier:test .
+Hier geht es nicht mehr um das Sample, sondern um deine eigene Anwendung — eine, die es schon gibt,
+mit eigenen Seiten, eigener Anmeldung und eigenem Hosting. Du brauchst **kein Docker**, keinen
+zweiten Dienst und keinen eigenen Prozess. Es kommt ein Paket dazu und drei Zeilen Code.
 
-# 2. Tunnel starten und die Adresse aus seinem Log ablesen
-docker compose -p pidtest up -d tunnel
-docker compose -p pidtest logs tunnel | grep trycloudflare
-
-# 3. Verifier mit dieser Adresse starten
-KEYSTORE_PATH=/pfad/zu/keystore.p12 \
-TRUST_ANCHOR_DIR=$PWD/trust-anchors \
-PUBLIC_BASE_URL=https://…trycloudflare.com \
-DE_KEYSTORE_PASSWORD=dein-passwort \
-DE_REGISTRATION_CERTIFICATE="eyJ0…" \
-docker compose -p pidtest up -d verifier
-
-# 4. Log ansehen
-docker compose -p pidtest logs -f verifier
-```
-
-Zwei Schritte, weil die Tunnel-Adresse zufällig ist und der Verifier sie kennen muss, **bevor** die
-Wallet sie zu sehen bekommt.
-
-Besser als Passwörter in die Kommandozeile zu tippen: eine Datei `.env` daneben legen (mit
-`DE_KEYSTORE_PASSWORD=…` und `DE_REGISTRATION_CERTIFICATE=…`) und `--env-file .env` übergeben. Dann
-landet nichts in der Shell-History.
-
----
-
-## In die eigene Anwendung einbauen
-
-Das Sample ist absichtlich eigenständig und hängt an genau einem Paket. Für eine eigene Anwendung
-nimm stattdessen `miEUDIverifier.Core` ab Version 2.0.0 — dort steckt derselbe Weg, aber als
-Bibliothek, mit der Attributzuordnung auf ein `IdentityData`-Objekt.
+### Ein Paket, nicht zwei
 
 ```bash
 dotnet add package miEUDIverifier.Core
 ```
 
+Das ist alles. `Tessio.Verifier` kommt als Abhängigkeit mit — du musst es **nicht** separat
+hinzufügen und auch nicht direkt benutzen. Was du davon brauchst, ist hinter
+`miEUDIverifier.Core` versteckt.
+
+Eine Voraussetzung: das Paket verlangt ab 2.0.0 das **ASP.NET-Core-Framework**, weil es
+HTTP-Endpunkte hostet. Eine Web-Anwendung erfüllt das von sich aus.
+
+### Drei Zeilen in `Program.cs`
+
 ```csharp
-using miEUDIverifier.Services;
 using miEUDIverifier.Services.Tessio;
 
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddInProcessVerifier(new InProcessVerifierOptions
-{
-    // Die Adresse, die das HANDY erreicht — nicht localhost.
-    PublicBaseUrl = "https://verifier.example.com",
-
-    // Die .p12 mit privatem Schlüssel, deinem Zertifikat UND dessen CA.
-    AccessCertificatePath = "/certs/keystore.p12",
-    AccessCertificatePassword = builder.Configuration["KeystorePassword"],
-
-    // Unverändert, Byte für Byte.
-    RegistrationCertificate = builder.Configuration["RegistrationCertificate"],
-
-    // Der Ordner aus Schritt 6.
-    IssuerTrustAnchorDirectory = "/trust-anchors",
-});
+// 1. Registrieren — am besten aus der Konfiguration gebunden, siehe unten.
+builder.Services.AddInProcessVerifier(
+    builder.Configuration.GetSection("Pid").Get<InProcessVerifierOptions>()!);
 
 var app = builder.Build();
 
-app.UseForwardedHeaders();    // hinter Proxy/Tunnel: sonst wird eine http-Adresse verschickt
-app.MapInProcessVerifier();   // die Endpunkte, die die Wallet aufruft
+// 2. Nur falls deine App hinter einem Reverse Proxy oder einer Lastverteilung steht.
+//    Ohne das baut die Bibliothek eine http-Adresse, die die Wallet ablehnt.
+app.UseForwardedHeaders();
 
-// Eine Prüfung starten und auf das Ergebnis warten:
-app.MapGet("/pruefen", async (TessioVerifierEngine verifier) =>
+// 3. Die Endpunkte, die die WALLET aufruft. Nicht deine Oberfläche.
+app.MapInProcessVerifier();
+```
+
+Das fügt deiner Anwendung diese Routen hinzu, unter dem Präfix aus `RoutePrefix` (Standard
+`/verify`):
+
+| Route | Wer ruft das auf |
+|---|---|
+| `GET {prefix}/jar/{id}` | die Wallet, um die signierte Anfrage zu holen |
+| `POST {prefix}/callback` | die Wallet, um die verschlüsselte Antwort abzuliefern |
+| `GET {prefix}/{session}` und `/stream` | Statusabfrage |
+| `GET {prefix}/{session}/return` | die Wallet schickt das Handy dorthin |
+| `GET {prefix}/start` | wird auf `/` umgeleitet, siehe unten |
+
+Wähle das Präfix so, dass es mit nichts in deiner Anwendung kollidiert.
+
+### Die Konfiguration gehört in `appsettings.json`
+
+```json
+{
+  "Pid": {
+    "PublicBaseUrl": "https://deine-app.example.com",
+    "RoutePrefix": "/verify",
+    "AccessCertificatePath": "/certs/keystore.p12",
+    "IssuerTrustAnchorDirectory": "/trust-anchors",
+    "RequestedClaims": [ "family_name", "given_name", "birth_date" ]
+  }
+}
+```
+
+Passwort und Registrierungszertifikat **nicht** hierhin — die kommen aus Umgebungsvariablen oder
+dem Secret-Store deiner Umgebung:
+
+```csharp
+var pid = builder.Configuration.GetSection("Pid").Get<InProcessVerifierOptions>()!;
+pid.AccessCertificatePassword = builder.Configuration["KEYSTORE_PASSWORD"];
+pid.RegistrationCertificate   = builder.Configuration["REGISTRATION_CERTIFICATE"];
+builder.Services.AddInProcessVerifier(pid);
+```
+
+### Zwei Dinge, die eine bestehende Anwendung anders machen als ein Sample
+
+Beide sind beim Einbau in eine App mit Anmeldung aufgefallen, nicht im Sample — und beide sind in
+`miEUDIverifier.Core` **2.0.1** behoben. Mit einer älteren Version musst du sie selbst behandeln.
+
+**Deine Anmeldung darf die Wallet nicht aussperren.** Eine Wallet kann sich nicht einloggen. Hat
+deine Anwendung eine globale Regel „jeder Endpunkt braucht einen angemeldeten Benutzer" —
+`options.FallbackPolicy = … RequireAuthenticatedUser()`, eine verbreitete und ansonsten sinnvolle
+Einstellung — dann antwortet sie der Wallet mit `302` auf die Login-Seite, und es gibt keine
+Präsentation. Seit 2.0.1 sind die Wallet-Endpunkte als `AllowAnonymous` markiert; deine eigenen
+Seiten bleiben geschützt. Das ist keine Aufweichung: diese Endpunkte sind die
+Protokolloberfläche zur Wallet und von Haus aus ohne Anmeldung gedacht.
+
+**Die Attributliste aus der Konfiguration ersetzt den Standard, sie ergänzt ihn nicht.** Das klingt
+selbstverständlich, war es aber nicht: der .NET-Konfigurationsbinder **hängt an** eine
+Collection-Eigenschaft an, die schon Werte enthält. Drei Attribute in `appsettings.json` ergaben
+deshalb eine Anfrage über zehn — und mehr zu fragen, als das Registrierungszertifikat erlaubt,
+lässt die Wallet die Anfrage ohne Zustimmungsdialog verwerfen. Seit 2.0.1 ist die Eigenschaft
+`null`-fähig ohne Vorbelegung, es gilt also genau, was du konfigurierst. Prüfe es beim ersten Start
+im Log oder im Request-Objekt, wenn du von einer älteren Version kommst.
+
+### Eine Prüfung starten, von deinem Code aus
+
+```csharp
+app.MapPost("/pruefung/start", async (TessioVerifierEngine verifier) =>
 {
     var tx = await verifier.InitializeTransactionAsync();
 
-    // Das kommt in den QR-Code:
+    // Das kommt in den QR-Code, oder als Link auf demselben Gerät:
     var deepLink = tx.BuildWalletDeepLink();
     var qrPng    = QrCodeService.GeneratePng(deepLink);
 
-    // Blockiert, bis die Wallet geantwortet hat oder die Sitzung abläuft.
-    var antwort  = await verifier.WaitForWalletResponseAsync(tx.TransactionId);
-    var identitaet = await verifier.ExtractIdentityDataAsync(antwort, options: null);
-
-    // ACHTUNG: null bedeutet "kein Credential des angefragten Typs" — das ist etwas
-    // anderes als "Daten unvollständig". Beides zu unterscheiden ist der Sinn des Feldes.
-    if (identitaet.CredentialType is null)
-        return Results.Conflict("Die Antwort trug kein Credential des angefragten Typs.");
-
-    return Results.Ok(new { identitaet.GivenName, identitaet.FamilyName, identitaet.BirthDate });
+    // tx.TransactionId merken — damit fragst du das Ergebnis ab.
+    return Results.Ok(new { tx.TransactionId, deepLink });
 });
-
-app.Run();
 ```
 
-Zwei Dinge, die du dabei wissen solltest:
+Auf das Ergebnis warten. `WaitForWalletResponseAsync` blockiert bis die Wallet antwortet oder die
+Sitzung abläuft, also **nicht** im Anfrage-Thread aufrufen, sondern im Hintergrund und das Ergebnis
+dort ablegen, wo deine Oberfläche es abfragen kann:
 
-- **Das Paket verlangt ab 2.0.0 das ASP.NET-Core-Framework**, weil es HTTP-Endpunkte hostet. Eine
-  Web-Anwendung merkt davon nichts; eine Konsolenanwendung braucht die ASP.NET-Core-Runtime.
-- **Der Widerrufsstatus wird auf diesem Weg nicht geprüft.** Bestätigt wird, dass der Ausweis
-  *gültig ausgestellt* wurde, nicht, dass er *noch gültig* ist. Warum das so ist und was die
-  Alternative ist, steht in `InProcessVerifierOptions.CheckRevocation`. Sag deinen Nutzern, was du
-  prüfst und was nicht.
+```csharp
+var envelope = await verifier.WaitForWalletResponseAsync(transactionId, ct: stoppingToken);
+var identity = await verifier.ExtractIdentityDataAsync(envelope, options: null, ct: stoppingToken);
 
----
+if (envelope.Error is { Length: > 0 })
+{
+    // Code UND Meldung — der gehostete Statusendpunkt hält die Meldung bewusst zurück,
+    // hier bekommst du sie.
+    logger.LogWarning("Abgelehnt: {Code} {Meldung}", envelope.Error, envelope.ErrorDescription);
+}
+else if (identity.CredentialType is null)
+{
+    // Wichtig: das ist NICHT dasselbe wie "Daten unvollständig". Die Antwort trug kein
+    // Credential des angefragten Typs, es wurde nichts übernommen.
+}
+else
+{
+    // identity.FamilyName, .GivenName, .BirthDate, .PlaceOfBirth, .Nationality, …
+}
+```
 
-**Geschrieben für:** jemanden, der das erste Mal mit EUDI-Wallets arbeitet. Wenn du die Protokolle
-kennst, ist die [README des Samples](README.md) der kürzere Weg.
+In einer Anwendung mit mehreren Benutzern gehört die Transaktions-ID in die Sitzung des Benutzers,
+nicht in ein Feld. Wie das aussieht, zeigt `src/miEUDIverifier/` in diesem Repository: dort hängt
+sie an einem Cookie, und ein Hintergrundlauf pro Sitzung schreibt das Ergebnis hinein.
+
+### Was du nicht vergessen darfst
+
+- **Eine öffentlich erreichbare HTTPS-Adresse.** Hat deine Anwendung schon, sonst wäre sie nicht
+  erreichbar — `PublicBaseUrl` ist genau diese Adresse. Nur zum lokalen Testen brauchst du den
+  Tunnel aus [Schritt 7](#7-von-außen-erreichbar-werden).
+- **Die zwei Zertifikate und die Trust Anchors** müssen zur Laufzeit erreichbar sein, also auf dem
+  Server liegen oder eingehängt werden — nicht ins Repository und nicht ins Container-Image.
+- **Der Widerrufsstatus wird nicht geprüft.** Bestätigt wird, dass der Ausweis *gültig ausgestellt*
+  wurde, nicht, dass er *noch gültig* ist. Sag deinen Nutzern, was du prüfst. Die Begründung steht
+  in `InProcessVerifierOptions.CheckRevocation`.
+- **`{prefix}/start` wird auf `/` umgeleitet.** Das ist die Demo-Startseite der Bibliothek, die in
+  einer fremden Anwendung nicht funktionieren kann. Wenn `/` bei dir auf das Präfix weiterleitet,
+  hast du eine Endlosschleife — leite stattdessen auf deine eigene Prüfseite.
