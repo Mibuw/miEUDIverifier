@@ -18,6 +18,11 @@ The access certificate is what decides which applies: whatever signs the request
 verifier. If you hold the certificate, you do not need a backend; if your ecosystem's identity
 comes from a hosted backend (as the EU reference one at `verifier-backend.eudiw.dev` does), you do.
 
+> **Since 2.0.0 this package requires the ASP.NET Core shared framework**, because the in-process
+> path hosts the HTTP endpoints a wallet calls. A web application is unaffected. A console or worker
+> host that only uses the backend path still compiles and runs, but needs the ASP.NET Core runtime
+> installed rather than the .NET runtime alone. The minimum QRCoder version also moved to 1.8.1.
+
 Part of the [miEUDIverifier](https://github.com/Mibuw/miEUDIverifier) project (Apache-2.0),
 which also ships a ready-to-run web app with a browser UI, REST API and Docker image.
 

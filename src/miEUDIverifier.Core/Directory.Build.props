@@ -3,10 +3,10 @@
   <PropertyGroup>
     <PackageId>miEUDIverifier.Core</PackageId>
     <!-- Baseline for local `dotnet pack`; CI overrides it from the v* tag (-p:Version=). -->
-    <VersionPrefix>1.4.2</VersionPrefix>
+    <VersionPrefix>2.0.0</VersionPrefix>
     <Authors>Wolfgang Mitterbucher</Authors>
     <Copyright>Copyright © Wolfgang Mitterbucher</Copyright>
-    <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data via the EUDI Verifier Backend REST API (OpenID4VP). Builds the DCQL request (mso_mdoc and SD-JWT VC), polls for the wallet response and extracts the identity data, including SD-JWT disclosure parsing.</Description>
+    <Description>Reusable .NET 8 library to read EUDI Wallet PID identity data over OpenID4VP, two ways behind one contract: in process with no verifier backend (hosting the wallet-facing endpoints and verifying the presentation itself, for an ecosystem whose relying-party access certificate you hold), or through the EUDI Verifier Backend REST API. Builds the DCQL request (mso_mdoc and SD-JWT VC), waits for the wallet response and extracts the identity data, including SD-JWT disclosure parsing. Requires the ASP.NET Core shared framework.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/Mibuw/miEUDIverifier</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Mibuw/miEUDIverifier</RepositoryUrl>
@@ -14,6 +14,38 @@
     <PackageTags>eudi;eudi-wallet;eudi-verifier;openid4vp;eidas2;digital-identity;verifiable-credentials;pid;mdoc;sd-jwt;iso18013-5</PackageTags>
     <PackageReadmeFile>PACKAGE.md</PackageReadmeFile>
     <PackageReleaseNotes>
+2.0.0 — Verify a presentation in process, with no verifier backend.
+Whatever signs the request objects is the verifier. Where you hold the relying-party access
+certificate yourself, a verifier backend is a container doing work your own process can do — so
+this release does it. AddInProcessVerifier() plus MapInProcessVerifier() host the endpoints the
+wallet calls (the signed request object and the response callback) and verify the presentation with
+Tessio.Verifier, no eudi-srv-verifier-endpoint container and no JVM. Verified with a real
+presentation from the German EUDI Wallet on 11 November 2026.
+New IVerifierEngine is the contract both paths implement: InitializeTransactionAsync,
+WaitForWalletResponseAsync and ExtractIdentityDataAsync. VerifierApiService implements it unchanged,
+so callers that use it directly need no edit. Which path a deployment takes is configuration:
+VerifierSettings.InProcessBackend names the ecosystem verified in process, and
+VerifierSettings.InProcess carries its access certificate, registration certificate and the PID
+issuer's trust anchors. Keep the backend path for an ecosystem whose verifier identity you do not
+hold — the EU reference one at verifier-backend.eudiw.dev is such a case, which is why both paths
+remain.
+The in-process path supplies what Tessio.Verifier 0.30.2 cannot yet: a request object carrying the
+registration certificate in verifier_info (format "registration_cert", a JWT whose typ header is
+rc-wrp+jwt), and an x5c holding the access certificate AND its path up to, but excluding, the trust
+anchor, as HAIP 1.0 section 5 and ETSI TS 119 472-2 clause 6.4.2 require.
+BREAKING — the ASP.NET Core shared framework is now required. The package hosts HTTP endpoints, so
+it references Microsoft.AspNetCore.App. A web application is unaffected. A console or worker host
+that only consumes the backend path still compiles and runs, but needs the ASP.NET Core runtime
+present rather than the .NET runtime alone; a self-contained publish grows accordingly.
+BREAKING — the minimum QRCoder version moves from 1.6.0 to 1.8.1, which Tessio.Verifier requires.
+Known limitation, deliberate and documented: the in-process path does NOT check revocation, so it
+confirms a PID was validly issued rather than that it is still valid. Set
+InProcessVerifierOptions.CheckRevocation to turn it on; against the German PID test issuer every
+presentation then fails status_invalid, because EAA-6.2.10.1-06.2 requires the status list's chain
+to be signed by whatever signed the Document Signer and that issuer uses sibling CAs under one
+root. No trust anchor configuration changes that. The backend path checks revocation, and a
+deployment that needs the guarantee should use it. Tell your users what you do and do not check.
+
 1.4.2 — Make the outcome of the type check visible to callers.
 1.4.0 rejects a presentation whose credential type was not requested, but said so only in the log:
 the result looked like any other incomplete one. IdentityData.CredentialType is now carried through

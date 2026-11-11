@@ -10,7 +10,7 @@
   <ItemGroup>
     <!-- The only dependency. Configuration, dependency injection and logging come
          with the web SDK, so there is no other plumbing to add. -->
-    <PackageReference Include="miEUDIverifier.Core" Version="1.4.3" />
+    <PackageReference Include="miEUDIverifier.Core" Version="2.0.0" />
   </ItemGroup>
 
 </Project>
