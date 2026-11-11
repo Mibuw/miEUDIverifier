@@ -27,11 +27,22 @@ Which to use:
 |---|---|---|
 | Verifier backend | the Kotlin reference container | none |
 | Access and registration certificate | in the backend's configuration | in the application's configuration |
-| Real wallet presentation | verified end to end | **not yet** — request side verified only |
+| Credential format | `mso_mdoc` or `dc+sd-jwt`, either/or | `mso_mdoc` |
+| Revocation checked | yes, by the backend | **no** — see that sample's README |
+| Real wallet presentation | verified end to end | verified end to end (2026-11-11) |
 
-The first is the path with a successful scan behind it. The second is where this is going, and it
-still needs its first real presentation. Both need the same two certificates, which is the part no
-library removes.
+Both have now completed a presentation from the real German wallet, so the choice is no longer
+between a proven and an unproven path. It is between two containers and one, against one gap: the
+backend-free path does not check revocation, for a reason that is documented rather than hidden.
+Both need the same two certificates, which is the part no library removes.
+
+Since 2026-11-11 this repository's own web app takes the backend-free path for the German
+ecosystem, so what the second sample demonstrates is also what runs at
+[mieudiverifier.mitterbucher.com](https://mieudiverifier.mitterbucher.com/?backend=de). The
+library's version of it lives in
+[`src/miEUDIverifier.Core/Services/Tessio/`](../src/miEUDIverifier.Core/Services/Tessio/); the
+sample keeps its own copy of the request builder deliberately, so that it depends on one NuGet
+package and nothing else.
 
 ## What you need first
 
