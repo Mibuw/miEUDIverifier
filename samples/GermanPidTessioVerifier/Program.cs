@@ -14,10 +14,12 @@ var settings = builder.Configuration.GetSection("GermanPid");
 // 2. the registration certificate, which says what this verifier is allowed to ask for
 // 3. the trust anchors of the PID issuer, without which a valid credential is still untrusted
 
-var accessCertificate = X509CertificateLoader.LoadPkcs12FromFile(
+// The whole chain, not just the leaf. HAIP 1.0 section 5 and ETSI TS 119 472-2 clause 6.4.2 want
+// the access certificate AND its path up to, but excluding, the trust anchor in the JAR's x5c,
+// and a wallet that is handed only the leaf may not be able to build a path to its trust list.
+var accessCertificateChain = AccessCertificateChain.LoadFromPkcs12(
     Required(settings, "AccessCertificatePath"),
-    settings["AccessCertificatePassword"],
-    X509KeyStorageFlags.EphemeralKeySet);
+    settings["AccessCertificatePassword"]);
 
 var registrationCertificate = settings["RegistrationCertificate"] is { Length: > 0 } inline
     ? inline
@@ -47,10 +49,12 @@ const string RoutePrefix = "/verify";
 // The request builder, because release 0.30.2 cannot put a registration certificate in
 // verifier_info yet (upstream issue 185, pull request 187).
 builder.Services.AddSingleton<IPresentationRequestBuilder>(_ => new RegistrationCertificateRequestBuilder(
-    accessCertificate,
+    accessCertificateChain,
     registrationCertificate,
     new Uri($"{publicBaseUrl}{RoutePrefix}/request"),
-    TimeSpan.FromMinutes(5)));
+    TimeSpan.FromMinutes(5),
+    // Only ever true for a local smoke test. A real wallet refuses a self-signed signer.
+    allowSelfSignedAccessCertificate: settings.GetValue("AllowSelfSignedAccessCertificate", false)));
 
 // The trust resolver, because the default one trusts the library's own mock issuers and nothing else.
 builder.Services.AddSingleton<ITrustListResolver>(_ => new StaticTrustListResolver(
@@ -104,8 +108,10 @@ app.MapTessioVerifier();
 app.MapGet("/", () => Results.Redirect($"{RoutePrefix}/start"));
 
 app.Logger.LogInformation(
-    "German PID verifier ready. client_id {ClientId}, {AnchorCount} issuer trust anchor(s) from {Directory}.",
-    ClientIdentifier.X509Hash(accessCertificate), anchors.Count, anchorDirectory);
+    "German PID verifier ready. client_id {ClientId}, {ChainLength} certificate(s) in x5c, " +
+    "{AnchorCount} issuer trust anchor(s) from {Directory}.",
+    ClientIdentifier.X509Hash(accessCertificateChain[0]), accessCertificateChain.Count,
+    anchors.Count, anchorDirectory);
 
 app.Run();
 

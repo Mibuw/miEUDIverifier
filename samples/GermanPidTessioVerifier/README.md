@@ -10,8 +10,9 @@ Kotlin reference backend. That one is the tested production path. This one remov
 ## What it is made of
 
 ```
-Tessio.Verifier.AspNetCore 0.30.2     the hosted endpoints and the verification pipeline
-RegistrationCertificateRequestBuilder what this sample adds: the signed request object
+Tessio.Verifier.AspNetCore 0.30.2     the hosted endpoints, the request object, the verification
+RegistrationCertificateRequestBuilder what this sample adds: one claim, and a second signature
+AccessCertificateChain                reads the access certificate and its issuers out of a PKCS#12
 ```
 
 `AddTessioVerifier` registers its services with `TryAdd`, so anything registered **before** it
@@ -19,7 +20,7 @@ wins. This sample replaces two defaults:
 
 | Default | Replaced by | Why |
 |---|---|---|
-| `DemoPresentationRequestBuilder` | `RegistrationCertificateRequestBuilder` | 0.30.2 cannot put a registration certificate in `verifier_info`, and the German wallet refuses a request without one |
+| `DemoPresentationRequestBuilder` | `RegistrationCertificateRequestBuilder`, which **wraps** the library's own `SignedPresentationRequestBuilder` | 0.30.2 cannot put a registration certificate in `verifier_info`, and the German wallet refuses a request without one |
 | `DevDefaultTrustListResolver` | `StaticTrustListResolver` over your anchor folder | the default trusts the library's own mock issuers and nothing else |
 
 `MdocVerifier` is also re-registered, only to turn `CheckStatus` on so revocation is actually
@@ -28,15 +29,26 @@ checked.
 ### Why a request builder of our own
 
 The registration certificate travels in the `verifier_info` claim, which is **inside** the
-signature, so it cannot be added after the fact. Release 0.30.2 has no option for it. That is
+signature, so it cannot be bolted on afterwards. Release 0.30.2 has no option for it. That is
 [issue 185](https://github.com/tripledownab/tessio-verifier/issues/185) upstream, with
 [pull request 187](https://github.com/tripledownab/tessio-verifier/pull/187) pending. **When that
 lands, delete `RegistrationCertificateRequestBuilder.cs`** and register Tessio's own
 `SignedPresentationRequestBuilder` with `VerifierInfoJson` instead.
 
-The claim set it produces was compared against a request object the reference implementation
-emitted for the same presentation. They match claim for claim; this sample additionally sets
-`exp`.
+Until then, the builder does the least it can get away with: it lets the library build and sign
+the request, then takes the result apart, adds the one claim, and signs the payload again under
+**the library's own JOSE header, reused byte for byte**. The claim set, the `typ`, the `x5c` chain
+and the certificate path rules all stay the library's. Roughly thirty lines are ours.
+
+That is worth saying because the first version of this file did the opposite -- assembled the
+whole claim set and the header itself -- and was already wrong in a way only a wallet would have
+shown: it put a single certificate in `x5c`, while HAIP 1.0 section 5 and ETSI TS 119 472-2
+clause 6.4.2 require the access certificate *and its path up to, but excluding, the trust anchor*.
+The reference implementation sends two. A wallet handed only the leaf may be unable to reach its
+own trust list.
+
+The claim set was compared against a request object the reference implementation emitted for the
+same presentation. They match claim for claim; this sample additionally sets `exp`.
 
 ## The three things you must supply
 
@@ -52,9 +64,16 @@ GermanPid__IssuerTrustAnchorDirectory  folder of .pem/.crt/.cer/.der CA certific
 GermanPid__PublicBaseUrl               the verifier's public base URL, e.g. https://verifier.example
 ```
 
-1. **Access certificate.** Its SHA-256 over the DER *is* the `client_id`
-   (`x509_hash:<base64url>`); the sample logs the value it computed at startup. The key must be
-   EC P-256, because the request is signed ES256.
+There is one more switch, `GermanPid__AllowSelfSignedAccessCertificate`, default false. It exists
+only so a local smoke test can run against a throwaway key. HAIP forbids a self-signed request
+signer and a real wallet enforces that, so leaving it false is what keeps a misconfiguration from
+reaching the wallet.
+
+1. **Access certificate.** Export it as a PKCS#12 holding the certificate, its private key **and
+   its issuing CA certificates**: the JAR must carry the whole path except the trust anchor, and
+   the sample logs how many certificates it put in `x5c` at startup. Its SHA-256 over the DER *is*
+   the `client_id` (`x509_hash:<base64url>`), also logged. The key must be EC P-256, because the
+   request is signed ES256.
 2. **Registration certificate.** A compact JWT whose `typ` header is `rc-wrp+jwt`, sent verbatim
    -- the wallet checks a signature over those exact bytes. It also fixes **what you may ask
    for**: request one attribute beyond its scope and the wallet drops the request with no consent
@@ -111,6 +130,8 @@ Checked locally against a throwaway key and a real registration certificate:
 - the hand-built ES256 signature verifies against the certificate
 - the JAR is served as `application/oauth-authz-req+jwt`
 - the DCQL asks for the seven PID attributes under doctype `eu.europa.ec.eudi.pid.1`
+- `x5c` carries the access certificate and its issuing CA, and leaves the self-signed root out,
+  which is what the reference implementation does and what HAIP requires
 
 Also verified, against a presentation captured from a real wallet: with the two anchors above,
 the PID signer resolves as trusted through its `x5c`, and a single altered byte in an

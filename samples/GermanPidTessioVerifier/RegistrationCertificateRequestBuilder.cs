@@ -3,56 +3,74 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.IdentityModel.Tokens;
 using Tessio.Verifier.OpenId4Vp;
 
 namespace GermanPidTessioVerifier;
 
 /// <summary>
-/// Builds the signed request object for the German EUDI Wallet, which will not present against a
-/// request that carries no registration certificate.
+/// Adds the registration certificate the German EUDI Wallet insists on to the request object
+/// Tessio builds, by re-signing it with one claim more.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Why this class exists rather than Tessio's own <c>SignedPresentationRequestBuilder</c>: the
-/// registration certificate travels in the <c>verifier_info</c> claim, inside the signature, and
-/// release 0.30.2 has no option to put it there (upstream issue 185, pull request 187). Once that
-/// lands, this file can be deleted and the built-in builder configured instead.
+/// Why this exists: the registration certificate travels in <c>verifier_info</c>, which is inside
+/// the signature, and release 0.30.2 has no option to put it there (upstream issue 185, pull
+/// request 187). When that lands, delete this class and register
+/// <see cref="SignedPresentationRequestBuilder"/> directly with <c>VerifierInfoJson</c> set.
 /// </para>
 /// <para>
-/// The claim set below was taken from a request object the EUDI reference implementation produced
-/// for a German PID presentation and compared claim by claim, so the wallet sees the same request it
-/// would get from that backend.
+/// Why it delegates rather than building the request itself. An earlier version assembled the
+/// whole claim set and signed it, which meant owning a copy of everything the library does: the
+/// claim set, the certificate path rules, the JOSE header. That copy was already wrong in one
+/// way that only a wallet would have revealed -- it put a single certificate in <c>x5c</c>, while
+/// HAIP 1.0 section 5 and ETSI TS 119 472-2 clause 6.4.2 require the access certificate <em>and
+/// its path up to, but excluding, the trust anchor</em>, which is what the EUDI reference
+/// implementation sends. Delegating means the header, the chain and every claim come from the
+/// library, and a protocol member it gains in a later release arrives here for free. What is left
+/// below is one claim and one signature.
 /// </para>
 /// </remarks>
-public sealed class RegistrationCertificateRequestBuilder : IPresentationRequestBuilder
+public sealed class RegistrationCertificateRequestBuilder : IPresentationRequestBuilder, IDisposable
 {
-    private readonly X509Certificate2 _accessCertificate;
+    private readonly SignedPresentationRequestBuilder _inner;
+    private readonly ECDsa _signingKey;
     private readonly string _registrationCertificate;
-    private readonly Uri _requestUriBase;
-    private readonly TimeSpan _lifetime;
 
-    /// <param name="accessCertificate">
-    /// The relying-party access certificate with its private key. The SHA-256 of its DER is the
-    /// <c>x509_hash</c> client identifier, so this is the certificate the wallet pins the request to.
+    /// <param name="accessCertificateChain">
+    /// The relying-party access certificate first, then each certificate that issued the one
+    /// before it, stopping before the trust anchor. The first one must hold the private key; the
+    /// SHA-256 over its DER is the <c>x509_hash</c> client identifier.
     /// </param>
     /// <param name="registrationCertificate">
-    /// The registration certificate as the reference implementation delivers it: a compact JWT whose
-    /// <c>typ</c> header is <c>rc-wrp+jwt</c>. Sent verbatim, because the wallet verifies a signature
-    /// over these exact bytes.
+    /// The registration certificate as the reference implementation delivers it: a compact JWT
+    /// whose <c>typ</c> header is <c>rc-wrp+jwt</c>. Sent verbatim, because the wallet verifies a
+    /// signature over these exact bytes.
     /// </param>
     /// <param name="requestUriBase">
     /// Where the host serves the JAR, publicly reachable. Tessio's hosted endpoints serve it under
-    /// <c>{routePrefix}/request/{id}</c> and take the id from this URI's last segment.
+    /// <c>{routePrefix}/request/{id}</c> and take the id from the last segment of the URI this
+    /// produces.
     /// </param>
-    /// <param name="lifetime">How long the request stays valid.</param>
+    /// <param name="lifetime">How long a request stays valid when the caller names no lifetime.</param>
+    /// <param name="allowSelfSignedAccessCertificate">
+    /// Only for a local smoke test with a throwaway key. HAIP 1.0 section 5 says the certificate
+    /// signing the request must not be self-signed, and a real wallet enforces it.
+    /// </param>
     public RegistrationCertificateRequestBuilder(
-        X509Certificate2 accessCertificate,
+        IReadOnlyList<X509Certificate2> accessCertificateChain,
         string registrationCertificate,
         Uri requestUriBase,
-        TimeSpan lifetime)
+        TimeSpan lifetime,
+        bool allowSelfSignedAccessCertificate = false)
     {
-        ArgumentNullException.ThrowIfNull(accessCertificate);
+        ArgumentNullException.ThrowIfNull(accessCertificateChain);
         ArgumentNullException.ThrowIfNull(requestUriBase);
+        if (accessCertificateChain.Count == 0)
+        {
+            throw new ArgumentException("The access certificate chain is empty.", nameof(accessCertificateChain));
+        }
+
         if (string.IsNullOrWhiteSpace(registrationCertificate))
         {
             throw new ArgumentException(
@@ -60,62 +78,74 @@ public sealed class RegistrationCertificateRequestBuilder : IPresentationRequest
                 nameof(registrationCertificate));
         }
 
-        if (!accessCertificate.HasPrivateKey)
-        {
-            throw new ArgumentException(
-                "The access certificate has no private key, so it cannot sign the request object.",
-                nameof(accessCertificate));
-        }
+        var leaf = accessCertificateChain[0];
+        _signingKey = leaf.GetECDsaPrivateKey()
+            ?? throw new ArgumentException(
+                leaf.HasPrivateKey
+                    ? "The access certificate's private key is not an EC key, so it cannot sign ES256."
+                    : "The access certificate has no private key, so it cannot sign the request object.",
+                nameof(accessCertificateChain));
 
-        _accessCertificate = accessCertificate;
         _registrationCertificate = registrationCertificate.Trim();
-        _requestUriBase = requestUriBase;
-        _lifetime = lifetime;
+
+        // The library checks the chain's shape here, in the constructor: ordered, linked, the leaf
+        // not a CA and not self-signed, the trust anchor left out. A misconfigured certificate
+        // therefore fails at startup instead of silently at the wallet.
+        _inner = new SignedPresentationRequestBuilder(new PresentationRequestBuilderOptions
+        {
+            SigningCredentials = new SigningCredentials(
+                new ECDsaSecurityKey(_signingKey), SecurityAlgorithms.EcdsaSha256),
+            SigningCertificateChain = accessCertificateChain,
+            AllowSelfSignedSigningCertificate = allowSelfSignedAccessCertificate,
+            RequestUriBase = requestUriBase,
+            DefaultRequestLifetime = lifetime,
+        });
+
+        ClientId = ClientIdentifier.X509Hash(leaf);
     }
 
-    /// <summary>The <c>x509_hash</c> client identifier this builder's certificate produces.</summary>
-    public string ClientId => ClientIdentifier.X509Hash(_accessCertificate);
+    /// <summary>The <c>x509_hash</c> client identifier this builder's access certificate produces.</summary>
+    public string ClientId { get; }
 
     /// <inheritdoc />
-    public Task<PresentationRequest> BuildAsync(
+    public async Task<PresentationRequest> BuildAsync(
         PresentationRequestOptions options, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var issuedAt = DateTimeOffset.UtcNow;
-        var expiresAt = issuedAt + (options.RequestLifetime ?? _lifetime);
+        var request = await _inner.BuildAsync(options with { ClientId = ClientId }, ct).ConfigureAwait(false);
 
-        var payload = new JsonObject
+        // By-reference only. Under by-value delivery the authorization URI carries the JAR itself,
+        // so replacing the JAR would leave the URI pointing at the old one. The German wallet
+        // fetches request_uri anyway, and the host is configured for it.
+        if (request is not PresentationRequest.ByReference byReference)
         {
-            ["client_id"] = ClientId,
-            ["response_type"] = "vp_token",
-            ["response_mode"] = options.ResponseMode == ResponseMode.DirectPostJwt
-                ? "direct_post.jwt"
-                : "direct_post",
-            ["response_uri"] = options.ResponseUri.ToString(),
-            ["nonce"] = options.Nonce,
-            ["dcql_query"] = JsonNode.Parse(options.DcqlQueryJson),
-            ["iat"] = issuedAt.ToUnixTimeSeconds(),
-            ["exp"] = expiresAt.ToUnixTimeSeconds(),
-
-            // SPEC: OpenID4VP 1.0 section 5.8 -- under static wallet discovery the audience is this
-            // fixed string, not the wallet's own identifier.
-            ["aud"] = "https://self-issued.me/v2",
-        };
-
-        if (options.State is not null)
-        {
-            payload["state"] = options.State;
+            throw new InvalidOperationException(
+                "This builder delivers the request by reference. Configure the host's request URI base.");
         }
 
-        if (options.ClientMetadataJson is not null)
+        return byReference with { SignedRequestObject = ReSignWithVerifierInfo(byReference.SignedRequestObject) };
+    }
+
+    /// <summary>
+    /// Takes the library's own request object apart, adds <c>verifier_info</c> and signs it again.
+    /// The JOSE header is reused byte for byte, so <c>typ</c> and the <c>x5c</c> chain stay exactly
+    /// as the library produced them.
+    /// </summary>
+    private string ReSignWithVerifierInfo(string requestObject)
+    {
+        var parts = requestObject.Split('.');
+        if (parts.Length != 3)
         {
-            payload["client_metadata"] = JsonNode.Parse(options.ClientMetadataJson);
+            throw new InvalidOperationException(
+                "The library produced a request object that is not a compact JWS; cannot add verifier_info.");
         }
 
-        // SPEC: OpenID4VP 1.0 section 5.11 -- verifier_info is a non-empty array of attestations about
-        // the verifier. The reference implementation sends exactly one element for the registration
-        // certificate, with this format identifier.
+        var payload = JsonNode.Parse(Base64UrlEncoder.DecodeBytes(parts[1]))!.AsObject();
+
+        // SPEC: OpenID4VP 1.0 section 5.11 -- verifier_info is a non-empty array of attestations
+        // about the verifier. The reference implementation sends one element for the registration
+        // certificate, with this format identifier and the certificate as an opaque string.
         payload["verifier_info"] = new JsonArray(
             new JsonObject
             {
@@ -123,55 +153,15 @@ public sealed class RegistrationCertificateRequestBuilder : IPresentationRequest
                 ["data"] = _registrationCertificate,
             });
 
-        var requestObject = Sign(payload);
-        var requestUri = new Uri(
-            $"{_requestUriBase.ToString().TrimEnd('/')}/{Base64Url(RandomNumberGenerator.GetBytes(16))}");
-
-        // SPEC: OpenID4VP 1.0 section 5 / RFC 9101 -- by-reference delivery points the wallet at
-        // request_uri. request_uri_method is left out, so the wallet uses GET, which is what the host
-        // serves and what the German wallet was verified against.
-        PresentationRequest request = new PresentationRequest.ByReference
-        {
-            ClientId = ClientId,
-            Nonce = options.Nonce,
-            State = options.State,
-            AuthorizationRequestUri = new Uri(
-                "openid4vp://?client_id=" + Uri.EscapeDataString(ClientId) +
-                "&request_uri=" + Uri.EscapeDataString(requestUri.ToString())),
-            SignedRequestObject = requestObject,
-            RequestUri = requestUri,
-            ExpiresAt = expiresAt,
-        };
-
-        return Task.FromResult(request);
-    }
-
-    private string Sign(JsonObject payload)
-    {
-        // SPEC: OpenID4VP 1.0 section 5 / RFC 9101 -- "Verifiers MUST include the typ Header Parameter
-        // in Request Objects with the value oauth-authz-req+jwt".
-        // SPEC: RFC 7515 section 4.1.6 -- x5c is base64 (not base64url) DER, the leaf first.
-        var header = new JsonObject
-        {
-            ["alg"] = "ES256",
-            ["typ"] = "oauth-authz-req+jwt",
-            ["x5c"] = new JsonArray(Convert.ToBase64String(_accessCertificate.RawData)),
-        };
-
-        var signingInput =
-            Base64Url(JsonSerializer.SerializeToUtf8Bytes(header)) + "." +
-            Base64Url(JsonSerializer.SerializeToUtf8Bytes(payload));
-
-        using var key = _accessCertificate.GetECDsaPrivateKey()
-            ?? throw new InvalidOperationException(
-                "The access certificate's private key is not an EC key, so it cannot sign ES256.");
+        var signingInput = parts[0] + "." + Base64UrlEncoder.Encode(JsonSerializer.SerializeToUtf8Bytes(payload));
 
         // SignData returns the IEEE P1363 fixed-field concatenation (r||s), which is what JWS wants.
-        var signature = key.SignData(Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256);
+        var signature = _signingKey.SignData(
+            Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256);
 
-        return signingInput + "." + Base64Url(signature);
+        return signingInput + "." + Base64UrlEncoder.Encode(signature);
     }
 
-    private static string Base64Url(byte[] bytes) =>
-        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    /// <inheritdoc />
+    public void Dispose() => _signingKey.Dispose();
 }
