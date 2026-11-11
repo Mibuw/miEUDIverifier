@@ -126,6 +126,51 @@ app.MapTessioVerifier();
 // A plain starting point: the hosted pages render the QR code and poll the session themselves.
 app.MapGet("/", () => Results.Redirect($"{RoutePrefix}/start"));
 
+// Optional, off by default. The hosted session endpoint withholds failure messages ("the failure
+// message is not disclosed on this surface") because whoever holds a session id is not
+// necessarily the operator, and the callback's log line carries the error codes only. That is the
+// right default, and it is not enough to debug with: status_invalid alone stands for a status
+// list signer the verifier does not trust, an index outside the published list, a token whose
+// signature or typ is wrong, and more. Finding out which otherwise costs one live scan per guess.
+//
+// This reads the recorded result and discloses the messages. Claim values are never returned.
+// Do not enable it on anything reachable from outside, and prefer decorating nothing: the store
+// also implements IStateCorrelatingSessionStore and ISameDeviceSessionStore, so a decorator that
+// only implements ISessionStore breaks the wallet callback outright.
+if (builder.Configuration.GetValue("GermanPid:DiagnosticsEndpoint", false))
+{
+    app.MapGet("/diagnostics/session/{sessionId}", async (string sessionId, ISessionStore store) =>
+    {
+        var session = await store.GetAsync(sessionId);
+        if (session is null) return Results.NotFound();
+
+        static object? Describe(VerificationResult? r) => r is null ? null : new
+        {
+            r.IsValid,
+            r.CredentialType,
+            issuer = r.Issuer?.Identifier,
+            trusted = r.Issuer?.Trusted,
+            anchor = r.Issuer?.TrustAnchorSubject,
+            // Codes AND messages. The claim VALUES stay out: they are the holder's personal data.
+            claimNames = r.DisclosedClaims?.Keys.Order().ToArray() ?? [],
+            errors = r.Errors?.Select(e => new { e.Code, e.Message }).ToArray() ?? [],
+        };
+
+        return Results.Json(new
+        {
+            session.SessionId,
+            status = session.Status.ToString(),
+            session.FailedAttempts,
+            result = Describe(session.Result),
+            lastFailure = Describe(session.LastFailure),
+        });
+    });
+
+    app.Logger.LogWarning(
+        "Diagnostics endpoint is ENABLED under /diagnostics/session. It discloses verification "
+        + "failure messages. Turn GermanPid:DiagnosticsEndpoint off when done.");
+}
+
 app.Logger.LogInformation(
     "German PID verifier ready. client_id {ClientId}, {ChainLength} certificate(s) in x5c, " +
     "{AnchorCount} issuer trust anchor(s) from {Directory}.",
