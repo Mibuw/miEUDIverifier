@@ -15,9 +15,11 @@ is the first thing worth knowing about this repository, and it is explained belo
 ## ✅ Works with two wallet ecosystems — live and testable
 
 Verified end-to-end on **4 November 2026** with a verifier backend on both paths, and again on
-**11 November 2026** for the German path with no backend at all. Publicly testable examples of the
-German ecosystem are hard to come by, so both are open here — code, deployment templates and the
-trust analysis behind them.
+**11 November 2026** for the German path with no backend at all — a real presentation from the
+German EUDI Wallet through this app, which is what
+[mieudiverifier.mitterbucher.com](https://mieudiverifier.mitterbucher.com/?backend=de) has served
+since. Publicly testable examples of the German ecosystem are hard to come by, so both are open
+here — code, deployment templates and the trust analysis behind them.
 
 | Ecosystem | Wallet | Verifier identity | Verified by | Try it |
 |-----------|--------|-------------------|-------------|--------|
@@ -155,11 +157,15 @@ as an image. After the scan, the page polls for the result server-side and displ
 data – no manual reload needed.
 
 One consequence of the in-process path worth expecting: after the wallet finishes, **a page opens
-on the phone**. Tessio answers every processed response with a `redirect_uri` to its own return
-page, in both flows, deliberately — so a wallet cannot tell a cross-device session from a
-same-device one by the shape of the answer. HAIP 1.0 §5.1 requires that member for the same-device
-flow; OpenID4VP 1.0 §8.2 leaves it optional, and the reference backend sends nothing there, which
-is why it is new. There is no option for it in Tessio 0.30.2.
+on the phone** and shows the verified attributes. It is deliberate on the library's side — a wallet
+must not be able to tell a cross-device session from a same-device one by the shape of the answer,
+so every processed response carries a `redirect_uri`. HAIP 1.0 §5.1 requires that member for the
+same-device flow, OpenID4VP 1.0 §8.2 leaves it optional, and the reference backend sends nothing
+there, which is why it is new rather than wrong.
+
+What that page shows, what the surface behind it discloses and withholds, and the three things a
+deployment can do about it — including serving your own page instead — are set out in
+[the sample's README](samples/GermanPidTessioVerifier/README.md#a-page-opens-on-the-phone-afterwards).
 
 ## Try it (test endpoint)
 

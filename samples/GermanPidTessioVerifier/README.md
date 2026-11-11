@@ -174,16 +174,124 @@ For a one-off test without touching a production deployment, a temporary tunnel 
 it prints — or use the `docker-compose.yml` next to this file, which wires both up. The wallet has
 to reach `request_uri` and `response_uri` over the internet, so localhost will not do.
 
-### A page opens on the phone afterwards
+## A page opens on the phone afterwards
 
-Expected, and not something this sample chose. Tessio answers every processed response with a
-`redirect_uri` pointing at its own return page, in both flows, deliberately — so a wallet cannot
-tell a cross-device session from a same-device one by the shape of the answer. HAIP 1.0 section
-5.1 requires the member for the same-device flow; OpenID4VP 1.0 section 8.2 leaves it optional.
-The reference backend sends nothing there, which is why this is new.
+After the wallet finishes, a browser opens on the phone and lands on the verifier's **return page**.
+This is expected, it is not something this sample chose, and it does not happen with the reference
+backend — so it surprises anyone switching over. Here is exactly what happens and what is on it.
 
-There is no option for it in 0.30.2, and the only local workaround would be middleware rewriting
-the callback's JSON. Asked upstream instead.
+### Why
+
+Tessio answers every processed wallet response with a `redirect_uri`, in both flows, and the wallet
+follows it:
+
+```csharp
+// WalletCallbackEndpoint.cs
+error is null ? new { redirect_uri = RedirectUri(origin, prefix, result) } : (object)new { error }
+
+private static string RedirectUri(string origin, string prefix, CallbackResult result) =>
+    $"{origin}{prefix}/{Uri.EscapeDataString(result.SessionId!)}/return"
+    + $"#response_code={result.ResponseCode ?? SameDeviceSecrets.NewSecret()}";
+```
+
+It is deliberate, and the reason is good: a wallet must not be able to tell a cross-device session
+from a same-device one by the shape of the answer, so **every** processed response gets a
+`redirect_uri` with a fresh random code, whether or not anything is waiting to be redeemed.
+
+SPEC: HAIP 1.0 §5.1 requires `redirect_uri` for the same-device flow. OpenID4VP 1.0 §8.2 leaves it
+optional and asks that the URL carry "a fresh, cryptographically random value", which may be "a
+path component, a fragment or a parameter" — Tessio uses a fragment, so the code never reaches a
+server log or a `Referer` header. The EUDI reference backend sends no redirect for a cross-device
+presentation at all (its wallet log line reads `Dispatch accepted, return url: ` with nothing
+after it), which is why this is new rather than wrong.
+
+### What happens, in order
+
+1. The wallet POSTs the encrypted presentation to `{prefix}/callback`.
+2. The callback verifies it, completes the session, and answers `200` with
+   `{"redirect_uri": "https://…/verify/{sessionId}/return#response_code=…"}`.
+3. The wallet opens that URL in the phone's browser.
+4. `return.js` reads `response_code` out of the fragment and immediately removes it from the
+   address bar, so it does not stay in history.
+5. It POSTs the code to `{prefix}/{sessionId}/redeem`. **In a cross-device flow nothing is held**,
+   so the answer is `not_held` and the page says "No presentation is waiting to be confirmed. Open
+   your wallet again to retry." — then follows the session anyway.
+6. It opens an SSE stream on `{prefix}/{sessionId}/stream` and renders whatever the session says.
+
+Step 5 is worth knowing about: the "nothing waiting" wording is correct for same-device and reads
+like a problem in cross-device, where the presentation has in fact just succeeded. The status line
+from step 6 arrives immediately afterwards and overwrites it.
+
+### What the page shows
+
+A status line, a table of the disclosed attributes, and one line about the issuer:
+
+| Element | Source | Content |
+|---|---|---|
+| Status line | the SSE stream's event | `Verified ✓` · `Verification failed ✗` · `Session expired` · `The wallet's answer was refused. Waiting for another…` · `Lost the connection to the verifier.` |
+| Attribute table | `result.disclosedClaims` | **the claim values themselves** — one row per claim, name and value |
+| Issuer line | `result.issuer` | `Issuer: <identifier> · trusted: <true/false> · key: <keyResolutionMethod>` |
+
+So the holder sees their own PID attributes on their own phone. Everything is written with
+`textContent` and never as markup, so an issuer identifier — which is the presenter's own string —
+cannot become HTML.
+
+### What that surface discloses, and what it withholds
+
+The status endpoint and its stream ask for **nothing but a session id**, so they are an anonymous
+surface, and the library treats them as one. `SessionView` narrows the verification result rather
+than passing it through:
+
+- **withheld:** every free-text failure message (a code remains), and the trust list identifier
+  unless the deployment names it in `VerifierOptions.PublicTrustListSources`
+- **never there at all:** the authorization request in any form, and `state` — because a wallet's
+  callback is matched to its session by `state`, so it must not be reachable from something keyed
+  only by a session id
+- **disclosed:** the claim values, as above
+
+Two consequences for a deployment to weigh. The claim values reach a second surface, the phone's
+browser, which the verifier does not control; and the session id stays in that browser's URL and
+history, so whoever later holds it can read the result again for as long as the session lives.
+For the holder these are their own attributes, so this is not a disclosure to a third party — but
+it is a copy in a place you did not choose.
+
+### What you can do about it
+
+**Leave it as it is.** For a self-service or same-device flow this page *is* the user's
+confirmation, and showing it is the point. This sample leaves it on.
+
+**Publish the trust list source,** if the anchor should be visible rather than redacted:
+`VerifierOptions.PublicTrustListSources`. It is an allowlist by design, not a rule guessing which
+strings are safe.
+
+**Serve your own return page.** `MapTessioVerifier` maps the route and 0.30.2 has no option to turn
+it off, but a host can shadow it the same way this sample shadows the hosted start page — with
+middleware ahead of routing:
+
+```csharp
+app.Use(async (context, next) =>
+{
+    if (HttpMethods.IsGet(context.Request.Method)
+        && context.Request.Path.StartsWithSegments(prefix, out var rest)
+        && rest.Value?.EndsWith("/return", StringComparison.OrdinalIgnoreCase) == true)
+    {
+        // Your own page: a thank-you without the attributes, a redirect back to your site, …
+        context.Response.Redirect("/done");
+        return;
+    }
+
+    await next(context).ConfigureAwait(false);
+});
+```
+
+That keeps the `redirect_uri` the spec wants and changes only what the holder is shown. Do not
+instead strip `redirect_uri` out of the callback's JSON: it would remove a member HAIP requires in
+the same-device flow, where it is what carries the flow forward.
+
+**Wait for an option.** Asked upstream: an option on `VerifierOptions` to send the redirect only
+where a response code is actually held, or to point it somewhere of the host's choosing. Note the
+trade-off named above — sending it only for same-device tells a wallet which flow it is in, which
+is exactly what today's unconditional answer avoids.
 
 ## Revocation is not checked
 
