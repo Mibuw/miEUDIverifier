@@ -342,11 +342,30 @@ Seite ausliefern kannst, steht in der
 | Start bricht mit `password` / `MAC verify failure` ab | Passwort falsch | Passwort prüfen |
 | `1 certificate(s) in x5c` im Log | CA fehlt in der `.p12` | [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart) |
 | Wallet: `Could not trust certificate chain` | drei Ursachen sehen gleich aus: `x5c` unvollständig, Zertifikat abgelaufen, oder AIA/CRL im Zertifikat falsch | erst [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart), dann `openssl x509 -noout -dates` |
+| Wallet lehnt die **Signatur** ab, obwohl Start und Kette gut aussehen | selten: der private Schlüssel in der `.p12` passt nicht zum Zertifikat darin | siehe Kasten unter dieser Tabelle |
 | Wallet zeigt **keinen** Zustimmungsdialog, bricht gleich ab | du fragst mehr Attribute, als das Registrierungszertifikat erlaubt | Attributliste prüfen, siehe README „Requesting different attributes" |
 | Wallet: nichts passiert, Timeout | sie erreicht deine Adresse nicht | Tunnel noch offen? `PublicBaseUrl` genau die Tunnel-Adresse, mit `https`, ohne `/` am Ende? |
 | Wallet beschwert sich über `http` | hinter einem Proxy/Tunnel sieht die Anwendung nur `http` | im Sample ist `UseForwardedHeaders` schon aktiv; prüfe, dass `PublicBaseUrl` mit `https://` beginnt |
 | `status_invalid` | der Widerrufsstatus konnte nicht geprüft werden | im Sample ist die Prüfung aus, du solltest das nicht sehen. Falls doch: README „Revocation is not checked" — und **nicht** versuchen, es mit weiteren Trust Anchors zu beheben, das hilft nachweislich nicht |
 | Seite zeigt nach dem Scan weiter „Waiting" | die Antwort kam nicht an oder wurde abgelehnt | Terminal lesen: dort steht der Grund |
+
+> **Passen Schlüssel und Zertifikat zusammen?** Die `.p12` ist ein Behälter mit drei Dingen: dem
+> privaten Schlüssel (verschlüsselt), deinem Zertifikat und dem der CA. Normalerweise passen
+> Schlüssel und Zertifikat zueinander — wenn nicht, startet alles sauber und erst die Wallet
+> verwirft die Signatur. Prüfen, ohne den Schlüssel anzuschauen: beide Zeilen müssen denselben
+> Hash ausgeben.
+>
+> ```bash
+> openssl pkcs12 -in keystore.p12 -clcerts -nokeys \
+>   | openssl x509 -noout -pubkey | openssl sha256
+>
+> openssl pkcs12 -in keystore.p12 -nocerts -nodes \
+>   | openssl pkey -pubout | openssl sha256
+> ```
+>
+> Der zweite Befehl entschlüsselt den privaten Schlüssel — er wird nur durch die Pipe geschickt und
+> nirgends gespeichert. Leite ihn **nicht** mit `>` in eine Datei um, sonst liegt der Schlüssel
+> unverschlüsselt auf der Platte.
 
 Mehr Details im Log:
 
