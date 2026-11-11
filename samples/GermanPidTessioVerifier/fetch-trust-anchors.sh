@@ -8,9 +8,14 @@
 #   Deutschland PID-Signer Test CA 1-26-1 2026           signs the PID itself
 #   Deutschland PID-Status-List-Signer Test CA 1-26-2 2026   signs the revocation status list
 #
-# The status list branch is easy to miss and fails late: everything about the presentation
-# verifies, and the only error is status_invalid, which reads like a revoked credential rather
-# than a missing certificate path.
+# Only the first two are needed today, because the sample runs with revocation checking off; see
+# the long comment on MdocVerifierOptions in Program.cs for why. The third is fetched anyway, so
+# that the folder describes the issuer completely and is ready if that question is resolved.
+#
+# What it does NOT do is fix status_invalid. That error reads like a missing certificate path, and
+# the status list CA is the obvious thing to reach for -- it does not help, because the rule the
+# error comes from compares issuer names and signatures rather than what the trust store holds.
+# Read Program.cs before spending time on it.
 #
 # The URLs are not guesswork: every certificate names the next one up in its own
 # authorityInfoAccess "CA Issuers" extension. To rediscover them:

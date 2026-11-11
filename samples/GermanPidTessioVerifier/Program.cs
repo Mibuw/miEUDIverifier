@@ -64,11 +64,40 @@ builder.Services.AddSingleton<ITrustListResolver>(_ => new StaticTrustListResolv
     trustAnchors: anchors,
     clock: TimeProvider.System));
 
-// Revocation is checked when the MSO carries a status element; it costs a network call per
-// presentation and is the difference between "was valid once" and "is valid now".
+// Revocation checking is OFF, and that is a real gap, not a preference. It is the difference
+// between "was valid once" and "is valid now", so read this before copying the setting.
+//
+// Turning it on makes every German PID presentation fail with status_invalid:
+//
+//   The top of the MSO revocation list's chain was not issued by the credential's Document
+//   Signer's issuer, by name and authority key identifier.
+//
+// That is not a library defect, and it took reading the library's source to see why. The rule
+// comes from EAA-6.2.10.1-06.2 (Implementing Regulation (EU) 2024/2979, Annex II as replaced by
+// (EU) 2026/1731): the top certificate of the status list's chain "shall be signed or sealed by
+// the certificate used to sign the certificate in the x5chain element of the MSO" -- that is, by
+// whatever signed the Document Signer. The German PID test issuer signs the two under sibling CAs
+// under one root:
+//
+//   Deutschland PID-Provider Root Test CA 1 2026                 the root
+//   +- Deutschland PID-Signer Test CA 1-26-1 2026                signs the Document Signer
+//   +- Deutschland PID-Status-List-Signer Test CA 1-26-2 2026     signs the status list
+//
+// 1-26-2 was signed by the root, not by 1-26-1, so the rule cannot hold however the trust anchors
+// are configured: it compares issuer names and signatures, not reachability within a trust list.
+// Adding 1-26-2 to the trust store -- the obvious reading of the error -- changes nothing.
+//
+// The regulation leaves an issuer exactly one way to use a separate status list CA: carry the
+// certificate element in the MSO's revocation reference (-06.1), which then anchors the list on
+// its own. This PID does not carry it. On that reading it is the issuer's side that is out of
+// line, which is worth knowing before anyone spends a day on trust anchors. Asked upstream in
+// case there is a route neither of us sees.
+//
+// Until then the choice is this flag or no presentations at all, and a test verifier can live
+// with the first. A production verifier cannot: a revoked PID would be accepted here.
 builder.Services.AddSingleton(sp => new MdocVerifier(
     sp.GetRequiredService<ITrustListResolver>(),
-    new MdocVerifierOptions { CheckStatus = true },
+    new MdocVerifierOptions { CheckStatus = false },
     TimeProvider.System));
 
 // Behind a reverse proxy or a tunnel the application sees a plain HTTP connection, and the host
