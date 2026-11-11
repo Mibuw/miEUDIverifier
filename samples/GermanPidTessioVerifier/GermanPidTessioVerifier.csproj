@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GermanPidTessioVerifier</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The only dependency, and no verifier backend behind it: this package hosts the request
+         and response endpoints and verifies the presentation in process. -->
+    <PackageReference Include="Tessio.Verifier.AspNetCore" Version="0.30.2" />
+  </ItemGroup>
+
+</Project>

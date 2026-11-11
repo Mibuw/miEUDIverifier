@@ -12,6 +12,27 @@ repository** — it pulls the library from NuGet exactly as any other consumer w
 It is deliberately **not** part of `miEUDIverifier.sln`, so building the repository never depends on
 a published package and the sample never silently picks up unreleased source changes.
 
+## There is a second sample, without a backend
+
+[`GermanPidTessioVerifier/`](GermanPidTessioVerifier) reads the same German PID with **no verifier
+backend at all** — no `eudi-srv-verifier-endpoint` container. It uses
+[`Tessio.Verifier.AspNetCore`](https://github.com/tripledownab/tessio-verifier), a .NET verifier that
+hosts the request and response endpoints and verifies the presentation in process, and supplies the
+one piece that package is still missing: a request object carrying the registration certificate in
+`verifier_info`.
+
+Which to use:
+
+| | `GermanPidVerifier` | `GermanPidTessioVerifier` |
+|---|---|---|
+| Verifier backend | the Kotlin reference container | none |
+| Access and registration certificate | in the backend's configuration | in the application's configuration |
+| Real wallet presentation | verified end to end | **not yet** — request side verified only |
+
+The first is the path with a successful scan behind it. The second is where this is going, and it
+still needs its first real presentation. Both need the same two certificates, which is the part no
+library removes.
+
 ## What you need first
 
 This is the hard part, and no amount of client configuration substitutes for it.
