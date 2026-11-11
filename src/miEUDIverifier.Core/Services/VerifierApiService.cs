@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -10,7 +10,16 @@ using Microsoft.Extensions.Options;
 
 namespace miEUDIverifier.Services;
 
-public class VerifierApiService
+/// <summary>
+/// The verification engine that delegates to an EUDI reference verifier backend over HTTP.
+/// </summary>
+/// <remarks>
+/// Kept for the EU ecosystem, whose verifier identity comes from the hosted backend at
+/// verifier-backend.eudiw.dev. The German path does not use this: see
+/// <see cref="Tessio.TessioVerifierEngine"/>, which needs no backend because we hold the
+/// access certificate ourselves.
+/// </remarks>
+public class VerifierApiService : IVerifierEngine
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -551,7 +560,7 @@ public class VerifierApiService
     // ── Attribute extraction ──────────────────────────────────────────────────
 
     // mso_mdoc: { "eu.europa.ec.eudi.pid.1": { "family_name": "...", ... } }
-    private static void ExtractFromMdoc(JsonElement attributes, IdentityData identity)
+    internal static void ExtractFromMdoc(JsonElement attributes, IdentityData identity)
     {
         foreach (var ns in attributes.EnumerateObject())
         {
@@ -801,7 +810,7 @@ public class VerifierApiService
         return Convert.ToBase64String(hash).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    private static string? GetStringValue(JsonElement el)
+    internal static string? GetStringValue(JsonElement el)
     {
         switch (el.ValueKind)
         {
@@ -826,7 +835,7 @@ public class VerifierApiService
     /// Extracts a place of birth. Both PID formats carry a structured value; the German PID
     /// populates only "locality", so that is preferred, with the raw value as a fallback.
     /// </summary>
-    private static string? GetPlaceValue(JsonElement el)
+    internal static string? GetPlaceValue(JsonElement el)
     {
         if (el.ValueKind == JsonValueKind.Object)
         {
@@ -847,7 +856,7 @@ public class VerifierApiService
     /// The utility endpoint sometimes returns birth_date as a Unix timestamp
     /// in milliseconds (e.g. 212371200000 = 1976-09-24) instead of an ISO string.
     /// </summary>
-    private static string? ParseDateValue(JsonElement el)
+    internal static string? ParseDateValue(JsonElement el)
     {
         // Already an ISO date string → return as is
         if (el.ValueKind == JsonValueKind.String)

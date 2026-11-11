@@ -12,6 +12,38 @@ repository** — it pulls the library from NuGet exactly as any other consumer w
 It is deliberately **not** part of `miEUDIverifier.sln`, so building the repository never depends on
 a published package and the sample never silently picks up unreleased source changes.
 
+## There is a second sample, without a backend
+
+[`GermanPidTessioVerifier/`](GermanPidTessioVerifier) reads the same German PID with **no verifier
+backend at all** — no `eudi-srv-verifier-endpoint` container. It uses
+[`Tessio.Verifier.AspNetCore`](https://github.com/tripledownab/tessio-verifier), a .NET verifier that
+hosts the request and response endpoints and verifies the presentation in process, and supplies the
+one piece that package is still missing: a request object carrying the registration certificate in
+`verifier_info`.
+
+Which to use:
+
+| | `GermanPidVerifier` | `GermanPidTessioVerifier` |
+|---|---|---|
+| Verifier backend | the Kotlin reference container | none |
+| Access and registration certificate | in the backend's configuration | in the application's configuration |
+| Credential format | `mso_mdoc` or `dc+sd-jwt`, either/or | `mso_mdoc` |
+| Revocation checked | yes, by the backend | **no** — see that sample's README |
+| Real wallet presentation | verified end to end | verified end to end (2026-11-11) |
+
+Both have now completed a presentation from the real German wallet, so the choice is no longer
+between a proven and an unproven path. It is between two containers and one, against one gap: the
+backend-free path does not check revocation, for a reason that is documented rather than hidden.
+Both need the same two certificates, which is the part no library removes.
+
+Since 2026-11-11 this repository's own web app takes the backend-free path for the German
+ecosystem, so what the second sample demonstrates is also what runs at
+[mieudiverifier.mitterbucher.com](https://mieudiverifier.mitterbucher.com/?backend=de). The
+library's version of it lives in
+[`src/miEUDIverifier.Core/Services/Tessio/`](../src/miEUDIverifier.Core/Services/Tessio/); the
+sample keeps its own copy of the request builder deliberately, so that it depends on one NuGet
+package and nothing else.
+
 ## What you need first
 
 This is the hard part, and no amount of client configuration substitutes for it.

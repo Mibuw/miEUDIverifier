@@ -1,10 +1,22 @@
 # miEUDIverifier.Core
 
-Reusable **.NET 8** library to read **EUDI Wallet PID identity data** (family name, given name,
-date of birth) via the **EUDI Verifier Backend REST API** (OpenID4VP). It builds the DCQL request,
-polls for the wallet response and extracts the identity data — for **both** `mso_mdoc`
-(ISO/IEC 18013-5) and **SD-JWT VC** (`dc+sd-jwt`) credential formats, including SD-JWT
+Reusable **.NET 8** library to read **EUDI Wallet PID identity data** over OpenID4VP. It builds the
+DCQL request, waits for the wallet response and extracts the identity data — for **both**
+`mso_mdoc` (ISO/IEC 18013-5) and **SD-JWT VC** (`dc+sd-jwt`) credential formats, including SD-JWT
 disclosure parsing.
+
+Two ways to verify, behind one contract (`IVerifierEngine`):
+
+| | **In process** | **Via a verifier backend** |
+|---|---|---|
+| What verifies | this library, using [Tessio.Verifier](https://github.com/tripledownab/tessio-verifier) | the EUDI `eudi-srv-verifier-endpoint` backend over its REST API |
+| You need | your own **relying-party access certificate** | a reachable backend that holds one |
+| Deployment | one process | one process plus a JVM container |
+| Revocation | see the caveat below | checked by the backend |
+
+The access certificate is what decides which applies: whatever signs the request objects *is* the
+verifier. If you hold the certificate, you do not need a backend; if your ecosystem's identity
+comes from a hosted backend (as the EU reference one at `verifier-backend.eudiw.dev` does), you do.
 
 Part of the [miEUDIverifier](https://github.com/Mibuw/miEUDIverifier) project (Apache-2.0),
 which also ships a ready-to-run web app with a browser UI, REST API and Docker image.
@@ -15,7 +27,7 @@ which also ships a ready-to-run web app with a browser UI, REST API and Docker i
 dotnet add package miEUDIverifier.Core
 ```
 
-## Usage
+## Usage — via a verifier backend
 
 ```csharp
 // Program.cs — register via DI (reads the "VerifierSettings" configuration section)
@@ -32,6 +44,44 @@ var envelope = await verifier.WaitForWalletResponseAsync(tx.TransactionId);
 var identity = await verifier.ExtractIdentityDataAsync(envelope);
 // identity.FamilyName, identity.GivenName, identity.BirthDate, identity.CredentialFormat
 ```
+
+## Usage — in process, no backend
+
+```csharp
+builder.Services.AddInProcessVerifier(new InProcessVerifierOptions
+{
+    // The address the WALLET reaches, not localhost: it fetches the request object and posts
+    // the response over the internet.
+    PublicBaseUrl = "https://verifier.example.com",
+
+    // The private key, your access certificate AND its issuing CA. The chain matters, not just
+    // the leaf: HAIP 1.0 §5 wants the path up to, but excluding, the trust anchor in x5c.
+    AccessCertificatePath = "/certs/keystore.p12",
+    AccessCertificatePassword = keystorePassword,
+
+    // Verbatim, as your registrar issued it: the wallet verifies a signature over those bytes.
+    RegistrationCertificate = registrationCertificate,
+
+    // The PID issuer's CA certificates. Without them a presentation verifies cryptographically
+    // and is still refused as untrusted.
+    IssuerTrustAnchorDirectory = "/trust-anchors",
+});
+
+var app = builder.Build();
+app.UseForwardedHeaders();   // behind a proxy or tunnel; otherwise response_uri comes out as http
+app.MapInProcessVerifier();  // the endpoints the wallet calls
+
+// The same three calls as above, through the same contract.
+var verifier = app.Services.GetRequiredService<TessioVerifierEngine>();
+var tx       = await verifier.InitializeTransactionAsync();
+```
+
+> **This path does not check revocation.** It confirms the PID was validly issued, not that it is
+> still valid, so a revoked PID is accepted. Not a library defect: EAA-6.2.10.1-06.2 requires the
+> status list's chain to be signed by whatever signed the Document Signer, and the German PID test
+> issuer uses sibling CAs under one root, which that rule cannot describe. `CheckRevocation` turns
+> it on, and its documentation explains what then happens and what was ruled out. Tell your users
+> what you do and do not check.
 
 ## Configuration (`VerifierSettings` section)
 
@@ -58,6 +108,8 @@ var identity = await verifier.ExtractIdentityDataAsync(envelope);
 | `SdJwtFormat` | `dc+sd-jwt` | DCQL format id for the SD-JWT VC option |
 | `SdJwtVctValues` | `urn:eudi:pid:1`, `urn:eu.europa.ec.eudi:pid:1` | Accepted `vct` values for the SD-JWT VC PID |
 | `SessionTtlMinutes` | `30` | Time-to-live for verification sessions in hosting apps that manage parallel sessions (e.g. the miEUDIverifier web app / REST API) |
+| `InProcessBackend` | *(none)* | Names the ecosystem verified in process instead of through a backend. Unset means every path goes over HTTP |
+| `InProcess:*` | *(see above)* | What the in-process path needs: the two certificates, the trust anchors and the public base URL |
 
 All values can be overridden via environment variables (e.g.
 `VerifierSettings__BackendUrl=…`) or CLI arguments, following standard .NET configuration
@@ -65,8 +117,9 @@ binding.
 
 ## What it requests
 
-Only the **PID credential**, offered to the wallet as *either* `mso_mdoc` *or* `dc+sd-jwt`
-(DCQL `credential_sets` options), so it can answer with whichever it holds.
+Only the **PID credential**. The backend path offers it as *either* `mso_mdoc` *or* `dc+sd-jwt`
+(DCQL `credential_sets` options), so the wallet can answer with whichever it holds. The in-process
+path requests `mso_mdoc` alone, because a deployment there names one credential format.
 
 Which attributes are requested is configuration: `PidClaims` sets the default and
 `PidClaimsByBackend` overrides it per backend. Attributes are given in **mso_mdoc spelling** and

@@ -181,4 +181,22 @@ public class VerifierSettings
     /// evicted after this period. Default: 30 minutes.
     /// </summary>
     public int SessionTtlMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// The name of the backend that is verified in process instead of through a verifier backend,
+    /// or null when every backend goes over HTTP. Must be a key of <see cref="Backends"/> or stand
+    /// on its own; <see cref="InProcess"/> then supplies its certificates.
+    /// </summary>
+    /// <remarks>
+    /// One, not a list. Each in-process backend hosts wallet-facing endpoints under its own route
+    /// prefix and holds its own access certificate, and no deployment has needed two. Making it a
+    /// list before one does would be guessing at the shape of that need.
+    /// </remarks>
+    public string? InProcessBackend { get; set; }
+
+    /// <summary>
+    /// What the in-process path needs: the access certificate, the registration certificate and the
+    /// issuer's trust anchors. Read only when <see cref="InProcessBackend"/> names a backend.
+    /// </summary>
+    public Services.Tessio.InProcessVerifierOptions InProcess { get; set; } = new();
 }

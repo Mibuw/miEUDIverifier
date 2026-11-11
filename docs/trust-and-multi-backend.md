@@ -6,11 +6,20 @@ multiple trust ecosystems. It is the reference for the design decisions behind
 `VerifierSettings.Backends` and [`docker/docker-compose.de-backend.yml`](../docker/docker-compose.de-backend.yml).
 
 > TL;DR — A verifier is only accepted by a wallet if the verifier's signing certificate chains to a
-> Certificate Authority that the wallet **already trusts** (via its trusted list). One verifier
-> backend signs with **one** certificate for **one** ecosystem. The EUDI reference wallet trusts the
-> `eudiw.dev` reference CA; EUDIWalletDE trusts the German Relying-Party Access CA (obtained via the
-> SPRIND sandbox). Therefore multiple wallets require multiple backend instances — which the app
-> now supports through named backends.
+> Certificate Authority that the wallet **already trusts** (via its trusted list). One signing
+> certificate serves **one** ecosystem. The EUDI reference wallet trusts the `eudiw.dev` reference
+> CA; EUDIWalletDE trusts the German Relying-Party Access CA (obtained via the SPRIND sandbox).
+> Therefore multiple wallets require multiple verifier identities — which the app supports through
+> named backends.
+
+> **Update, 2026-11-11.** This document's analysis of the trust model is unchanged and still the
+> reference for it. One of its conclusions is not: it says throughout that each ecosystem needs its
+> own `eudi-srv-verifier-endpoint` **instance**. What each ecosystem actually needs is its own
+> **signing certificate** — and where you hold that certificate yourself, no backend is involved at
+> all. The German path has run that way since 2026-11-11, verifying in process. The backend
+> instance remains necessary for an ecosystem whose verifier identity you do not hold, which is why
+> the EU path still uses one. Read "backend instance" below as "verifier identity", and see the
+> [README](../README.md#why-one-path-needs-no-backend-and-the-other-does) for which is which.
 
 Trust is only the first gate. Once a wallet accepts the verifier, a second gate decides which
 **attributes** it will actually release — that is the registration certificate, covered in

@@ -1,0 +1,49 @@
+# Runs the backend-free verifier next to an existing deployment without touching it: its own
+# compose project, its own port, no shared network, no reverse-proxy change.
+#
+# The secrets are NOT in this file and never pass through a shell. Compose substitutes them from
+# an env file you point it at, which can be the one the existing deployment already uses:
+#
+#   docker compose -p tessio-test --env-file /path/to/.env -f docker-compose.yml up -d tunnel
+#   # read the trycloudflare.com URL out of the tunnel's log, then:
+#   PUBLIC_BASE_URL=https://<that-url> docker compose -p tessio-test \
+#       --env-file /path/to/.env -f docker-compose.yml up -d verifier
+#
+# Two steps because a quick tunnel's hostname is random and the verifier has to bake it into
+# request_uri before the wallet ever sees it.
+#
+# Expected in the env file:
+#   DE_KEYSTORE_PASSWORD         the PKCS#12 password
+#   DE_REGISTRATION_CERTIFICATE  the registration certificate JWT
+# Expected in the environment, or edited below:
+#   KEYSTORE_PATH                host path of the PKCS#12 holding the access certificate and chain
+#   TRUST_ANCHOR_DIR             host path of the folder fetch-trust-anchors.sh filled
+#   PUBLIC_BASE_URL              the tunnel's or proxy's public base URL
+
+services:
+  verifier:
+    image: germanpid-tessio-verifier:test
+    container_name: tessio-test-verifier
+    restart: "no"
+    ports:
+      # Bound to localhost only: the tunnel reaches it, the internet does not.
+      - "127.0.0.1:${HOST_PORT:-5200}:8080"
+    environment:
+      GermanPid__AccessCertificatePath: /certs/keystore.p12
+      GermanPid__AccessCertificatePassword: ${DE_KEYSTORE_PASSWORD:?set it in the env file}
+      GermanPid__RegistrationCertificate: ${DE_REGISTRATION_CERTIFICATE:?set it in the env file}
+      GermanPid__IssuerTrustAnchorDirectory: /trust-anchors
+      GermanPid__PublicBaseUrl: ${PUBLIC_BASE_URL:?the tunnel URL, see the header}
+      Logging__LogLevel__Tessio: Debug
+    volumes:
+      - ${KEYSTORE_PATH:?host path of the PKCS#12}:/certs/keystore.p12:ro
+      - ${TRUST_ANCHOR_DIR:?host path of the trust anchors}:/trust-anchors:ro
+
+  # A quick tunnel: no account, no DNS change, a throwaway HTTPS hostname. Good enough for a
+  # test run and nothing more; it disappears when the container stops.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: tessio-test-tunnel
+    restart: "no"
+    network_mode: host
+    command: tunnel --no-autoupdate --url http://127.0.0.1:${HOST_PORT:-5200}

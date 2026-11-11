@@ -12,6 +12,14 @@ back empty-handed.
 > wrong and the wallet aborts before the consent screen with an error that looks exactly like a
 > broken certificate chain.
 
+> **Update, 2026-11-11.** Everything below still holds, and it is still what makes a presentation
+> succeed. What has changed is only *who* puts the registration certificate into the request: the
+> German path no longer runs through a verifier backend, so there is no
+> `VERIFIER_INTENDEDUSES_<n>_REGISTRATIONCERTIFICATE` and no intended-use id to reference it by. The
+> application holds the certificate and places it in the request object's `verifier_info` itself,
+> as one element with `format: "registration_cert"`. The spelling rules for the granted claims are
+> unchanged — and so is the failure mode when they are wrong.
+
 ## 0. Status — full PID attribute set verified (2026-11-04)
 
 Since **4 November 2026** the `de` backend completes a presentation of all seven PID attributes

@@ -7,42 +7,67 @@ sample for the **German EUDI Wallet** that uses nothing but the package is in
 [`samples/`](samples/README.md), together with where the endpoint, the certificates and the
 wallet-facing response URL each belong.
 
-A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that talks to the
-**EUDI Verifier Backend REST API** (OpenID4VP) to read identity data from an EUDI Wallet.
+A C#/.NET 8 **ASP.NET Core web app** (Minimal API with a browser UI) that reads identity data from
+an EUDI Wallet over OpenID4VP. The German path verifies the presentation **in this process, with no
+verifier backend**; the EU path talks to the **EUDI Verifier Backend REST API**. Why the two differ
+is the first thing worth knowing about this repository, and it is explained below.
 
 ## ✅ Works with two wallet ecosystems — live and testable
 
-Verified end-to-end on **4 November 2026**: a full presentation completes with **both** the EU
-reference wallet and the **German EUDI Wallet (EUDIWalletDE, SPRIND sandbox)**. Publicly testable
-examples of the German ecosystem are hard to come by, so both are open here — code, deployment
-templates and the trust analysis behind them.
+Verified end-to-end on **4 November 2026** with a verifier backend on both paths, and again on
+**11 November 2026** for the German path with no backend at all — a real presentation from the
+German EUDI Wallet through this app, which is what
+[mieudiverifier.mitterbucher.com](https://mieudiverifier.mitterbucher.com/?backend=de) has served
+since. Publicly testable examples of the German ecosystem are hard to come by, so both are open
+here — code, deployment templates and the trust analysis behind them.
 
-The currently verified configuration sends a Wallet-RP Intended Use id on **both** paths:
-`TEST-01` for `eu` (eudiw.dev requires a registration certificate since August 2026 — see
-[Multiple trust ecosystems](#multiple-trust-ecosystems-backend)) and `pos-pid` for `de`.
-The German path first completed on 28 July 2026.
+| Ecosystem | Wallet | Verifier identity | Verified by | Try it |
+|-----------|--------|-------------------|-------------|--------|
+| **EU reference** | EUDI Reference Wallet (iOS / Android) | eudiw.dev reference CA | the hosted backend at `verifier-backend.eudiw.dev` | [`/?backend=eu`](https://mieudiverifier.mitterbucher.com/?backend=eu) |
+| **Germany 🇩🇪** | EUDIWalletDE (SPRIND closed beta) | German Relying-Party Access CA, RP Access Certificate via the [SPRIND sandbox](https://sandbox.eudi-wallet.org/) | **this application**, in process | [`/?backend=de`](https://mieudiverifier.mitterbucher.com/?backend=de) |
 
-The German path runs against **one** Registration Certificate covering **both** PID formats, so a
-single QR code offers `mso_mdoc` and `dc+sd-jwt` as either/or alternatives and the wallet answers
-with whichever it holds. It requests seven attributes: family name, given name, date of birth,
-place of birth, nationality, issuing authority and issuing country.
+### Why one path needs no backend and the other does
 
-| Ecosystem | Wallet | Verifier identity | Try it |
-|-----------|--------|-------------------|--------|
-| **EU reference** | EUDI Reference Wallet (iOS / Android) | eudiw.dev reference CA | [`/?backend=eu`](https://mieudiverifier.mitterbucher.com/?backend=eu) |
-| **Germany 🇩🇪** | EUDIWalletDE (SPRIND closed beta) | German Relying-Party Access CA, RP Access Certificate via the [SPRIND sandbox](https://sandbox.eudi-wallet.org/) | [`/?backend=de`](https://mieudiverifier.mitterbucher.com/?backend=de) |
+A verifier backend exists to be the verifier: it holds the access certificate that signs the
+request, and its identity is the one the wallet pins the request to. Where you hold that
+certificate yourself, the backend is a container doing work your own process can do.
+
+For Germany we hold it — the RP Access Certificate from the SPRIND sandbox — so the application
+signs its own request objects, hosts the endpoints the wallet calls and verifies the presentation
+with [Tessio.Verifier](https://github.com/tripledownab/tessio-verifier). One container instead of
+two, and no JVM.
+
+For the EU ecosystem we do not. There the verifier identity comes from the hosted backend at
+`verifier-backend.eudiw.dev`, and no certificate of ours could replace it, so that path keeps its
+HTTP client. `IVerifierEngine` is the seam between the two: three methods, two implementations, and
+the UI, the polling and the session handling do not know which answered.
+
+> **One thing the in-process path does not do: check revocation.** It confirms that the PID was
+> validly issued, not that it is still valid, so a revoked PID is accepted. The page says so, in
+> both languages. The cause is not a library defect — EAA-6.2.10.1-06.2 requires the status list's
+> chain to be signed by whatever signed the Document Signer, and the German PID test issuer uses
+> sibling CAs under one root, which that rule cannot describe. The full reasoning, and what was
+> ruled out along the way, is in
+> [`InProcessVerifierOptions.CheckRevocation`](src/miEUDIverifier.Core/Services/Tessio/InProcessVerifierOptions.cs).
+> The EU path's backend does check it, which is one more reason that path keeps its client.
+
+The German path requests the PID as `mso_mdoc` and asks for seven attributes: family name, given
+name, date of birth, place of birth, nationality, issuing authority and issuing country — what its
+Registration Certificate covers. The EU path sends the Wallet-RP Intended Use id `TEST-01`
+(eudiw.dev has required a registration certificate since August 2026 — see
+[Multiple trust ecosystems](#multiple-trust-ecosystems-backend)). The German path first completed on
+28 July 2026, through a backend; the backend-free one on 11 November 2026.
 
 Pick your ecosystem with the switcher above the QR code — each has its own QR code, because a
-request object is signed by one access certificate and carries one `client_id`. One backend instance
-serves exactly one ecosystem; the app ties several together through
-[named backends](#multiple-trust-ecosystems-backend).
+request object is signed by one access certificate and carries one `client_id`. The app ties the
+ecosystems together through [named backends](#multiple-trust-ecosystems-backend).
 
 What the German path requires beyond the EU one — and what it took to get there — is written up in
 [docs/trust-and-multi-backend.md](docs/trust-and-multi-backend.md): the `x509_hash` client-id prefix,
-an encrypted response (`direct_post.jwt`), a Registration Certificate for data minimisation, a DCQL
-query offering `mso_mdoc` and `dc+sd-jwt` as alternatives, plus the certificate pitfalls (AIA/CRL are signed extensions, and a reused
-key makes old and new certificates share a Subject Key Identifier). All three failure modes surface
-in the wallet as the same unhelpful `Could not trust certificate chain`.
+an encrypted response (`direct_post.jwt`), a Registration Certificate for data minimisation, plus
+the certificate pitfalls (AIA/CRL are signed extensions, and a reused key makes old and new
+certificates share a Subject Key Identifier). All three failure modes surface in the wallet as the
+same unhelpful `Could not trust certificate chain`.
 
 ---
 
@@ -50,6 +75,10 @@ This verifier reads **only the PID credential** (Personal Identification Data). 
 asks for is configuration, not code: `PidClaims` sets the default and `PidClaimsByBackend` overrides
 it per backend. Attributes are given in **mso_mdoc spelling** and translated for SD-JWT VC, where
 two of them differ.
+
+Both formats are listed below because the EU path can receive either. The in-process German path
+asks for `mso_mdoc` only, which is the format that wallet presents and that its Registration
+Certificate covers.
 
 The default is the three basic attributes. The German path (`de`) is configured for seven, which is
 what its Registration Certificate covers:
@@ -78,6 +107,9 @@ The extracted values land on `IdentityData`; anything returned beyond the mapped
 
 ## Flow (Cross-Device)
 
+**Via a verifier backend** — the EU ecosystem. The wallet never talks to this app; it talks to the
+backend, which is the verifier, and the app asks the backend what came in.
+
 ```
 ┌─────────────┐     POST /ui/presentations      ┌──────────────────────┐
 │  Web app    │ ──────────────────────────────► │  EUDI Verifier       │
@@ -95,9 +127,45 @@ The extracted values land on `IdentityData`; anything returned beyond the mapped
       └───────────────────────────────────────┴──────────────────┘
 ```
 
-The app starts a local web server, automatically opens the browser and shows the QR code as an
-image. After the scan, the page polls the wallet's response server-side and displays the identity
+**In process** — the German ecosystem. There is no second component: the wallet fetches the signed
+request from this app and posts the presentation back to it, and the same process verifies it.
+
+```
+┌──────────────────────────────────────────────┐
+│  Web app (the Verifier itself)               │
+│                                              │
+│  signs the request object with its own       │
+│  access certificate, adds the registration   │
+│  certificate as verifier_info                │
+│                                              │
+│  Show QR code ──────────────────────────────┐│
+│                                             ││
+│  GET  /verify/jar/{id}      the signed JAR  ││   ┌──────────────────┐
+│  ◄──────────────────────────────────────────┼┼───│  EUDI Wallet App │
+│                                             ││   │  (iOS / Android) │
+│  POST /verify/callback      the encrypted   ││   │  scans QR code   │
+│  ◄──────────────────────────────────────────┼┼───│                  │
+│       response (direct_post.jwt)            ││   └──────────────────┘
+│                                             ││
+│  verifies it: issuer trust via x5c, device  ││
+│  binding, digests, doctype                  ││
+└─────────────────────────────────────────────┴┘
+```
+
+Either way the app starts a local web server, automatically opens the browser and shows the QR code
+as an image. After the scan, the page polls for the result server-side and displays the identity
 data – no manual reload needed.
+
+One consequence of the in-process path worth expecting: after the wallet finishes, **a page opens
+on the phone** and shows the verified attributes. It is deliberate on the library's side — a wallet
+must not be able to tell a cross-device session from a same-device one by the shape of the answer,
+so every processed response carries a `redirect_uri`. HAIP 1.0 §5.1 requires that member for the
+same-device flow, OpenID4VP 1.0 §8.2 leaves it optional, and the reference backend sends nothing
+there, which is why it is new rather than wrong.
+
+What that page shows, what the surface behind it discloses and withholds, and the three things a
+deployment can do about it — including serving your own page instead — are set out in
+[the sample's README](samples/GermanPidTessioVerifier/README.md#a-page-opens-on-the-phone-afterwards).
 
 ## Try it (test endpoint)
 
@@ -408,13 +476,34 @@ Or via CLI argument:
 dotnet run --project src/miEUDIverifier -- --VerifierSettings:BackendUrl=http://localhost:8080
 ```
 
-### What lives in the backend, not here
+### Where the verifier's identity lives
 
-This app is the **frontend and orchestration layer**. The verifier's cryptographic identity belongs
-to the verifier backend (the EUDI reference `eudi-srv-verifier-endpoint` container), because that is
-what signs the request objects. Configure it there via `VERIFIER_*` environment variables — a
-fully commented template is in
-[`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml):
+Whatever signs the request objects *is* the verifier, and that is what decides where its identity
+is configured. The two paths differ here, and nowhere else that matters.
+
+**The in-process path (German ecosystem).** The identity is this application's, so it is configured
+here, under `VerifierSettings:InProcess`:
+
+| Setting | Purpose |
+|---------|---------|
+| `InProcessBackend` | Which named ecosystem is verified in process (`de`) |
+| `InProcess:PublicBaseUrl` | The wallet-facing base URL. Not localhost: the wallet fetches the request object and posts the response over the internet |
+| `InProcess:AccessCertificatePath` *(+ `AccessCertificatePassword`)* | The PKCS#12 with the private key, the RP access certificate **and its issuing CA** |
+| `InProcess:RegistrationCertificate` *(or `…Path`)* | The registration certificate, verbatim — the wallet verifies a signature over those exact bytes |
+| `InProcess:IssuerTrustAnchorDirectory` | The PID issuer's CA certificates. Without them a presentation verifies cryptographically and is still refused as untrusted |
+| `InProcess:RequestedClaims` | What to ask for. Must stay within what the registration certificate grants, or the wallet drops the request with no consent screen |
+| `InProcess:CheckRevocation` | Off, and [for a documented reason](src/miEUDIverifier.Core/Services/Tessio/InProcessVerifierOptions.cs) |
+
+The chain matters, not just the leaf: HAIP 1.0 §5 and ETSI TS 119 472-2 §6.4.2 want the access
+certificate **and its path up to, but excluding, the trust anchor** in the JAR's `x5c`. A PKCS#12
+holding only the leaf produces a request a wallet may refuse to build a path for. The trust anchors
+for the German test issuer can be fetched with
+[`samples/GermanPidTessioVerifier/fetch-trust-anchors.sh`](samples/GermanPidTessioVerifier/fetch-trust-anchors.sh).
+
+**The HTTP path (EU ecosystem).** The identity belongs to the verifier backend, because that is
+what signs there. Configure it via `VERIFIER_*` environment variables — a fully commented template
+is in [`docker/docker-compose.de-backend.yml`](docker/docker-compose.de-backend.yml), which is also
+how the German path was run until 11 November 2026 and remains a working alternative:
 
 | Backend setting | Purpose |
 |-----------------|---------|
@@ -428,12 +517,14 @@ Certificates are therefore fully parameterised — they are simply mounted into 
 than configured in this app. To reuse this project in another ecosystem you need your own access
 certificate from that ecosystem's registrar; nothing in the code is bound to a specific issuer.
 
-**The one deliberate limit:** the requested credential is the **PID** with the claims
-`family_name`, `given_name` and `birth_date`, and the mdoc namespace `eu.europa.ec.eudi.pid.1` is a
-constant in `VerifierApiService`. Which *formats* and *vct* values are accepted is configurable (see
-above), but requesting a different credential type or other claims means editing the DCQL query in
-[`src/miEUDIverifier.Core/Services/VerifierApiService.cs`](src/miEUDIverifier.Core/Services/VerifierApiService.cs).
-This is a PID verifier by design; making the whole DCQL query configurable would be a welcome PR.
+**The one deliberate limit:** this is a PID verifier by design. The requested credential is the
+**PID**, and asking for a different credential type means editing the DCQL query — in
+[`VerifierApiService`](src/miEUDIverifier.Core/Services/VerifierApiService.cs) for the HTTP path,
+or in [`TessioVerifierEngine`](src/miEUDIverifier.Core/Services/Tessio/TessioVerifierEngine.cs) for
+the in-process one, where the doctype and namespace come from `InProcess:DocType` and
+`InProcess:MdocNamespace` and the query is built by the library's public `Dcql` helper. Which
+*claims* are requested is configuration on both paths. Making the whole DCQL query configurable
+would be a welcome PR.
 
 ## Hostname, IP address & HTTPS/SSL
 
@@ -564,7 +655,8 @@ miEUDIverifier/
 │   └── docker-compose.yml                  # Local EUDI verifier backend stack + app
 ├── samples/
 │   ├── README.md                            # Endpoint, certificates, response URL
-│   └── GermanPidVerifier/                   # ASP.NET Core app, NuGet package only
+│   ├── GermanPidVerifier/                   # ASP.NET Core app, NuGet package only
+│   └── GermanPidTessioVerifier/             # The same, with no verifier backend
 └── src/
     ├── miEUDIverifier/                      # ASP.NET Core web app (Minimal API)
     │   ├── miEUDIverifier.csproj
@@ -583,8 +675,16 @@ miEUDIverifier/
     │   │   ├── InitTransactionResponse.cs   # Response with transaction_id
     │   │   └── WalletResponseModels.cs      # VP response & IdentityData
     │   └── Services/
-    │       ├── VerifierApiService.cs        # REST API client (core logic)
-    │       └── QrCodeService.cs             # QR code output (PNG)
+    │       ├── IVerifierEngine.cs           # The seam: one contract, two engines
+    │       ├── VerifierApiService.cs        # Engine 1: verifier backend over HTTP
+    │       ├── QrCodeService.cs             # QR code output (PNG)
+    │       └── Tessio/                      # Engine 2: in process, no backend
+    │           ├── TessioVerifierEngine.cs          # Sessions, requests, responses
+    │           ├── TessioVerifierExtensions.cs      # DI + the wallet-facing endpoints
+    │           ├── InProcessVerifierOptions.cs      # What a deployment must supply
+    │           ├── RegistrationCertificateRequestBuilder.cs  # Adds verifier_info
+    │           ├── AccessCertificateChain.cs        # Leaf + path, anchor excluded
+    │           └── HostedRequestObjects.cs          # Serves the signed JARs
     └── miEUDIverifier.Core.Tests/           # xUnit tests (offline)
 ```
 

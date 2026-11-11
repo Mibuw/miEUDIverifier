@@ -12,8 +12,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The in-process verification path hosts HTTP endpoints the wallet calls (the JAR and the
+         wallet callback), so the package needs ASP.NET Core. A console or worker host that only
+         consumes the backend path still works: the framework reference resolves from the shared
+         framework and adds nothing to the output. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Verifies presentations in process, so the German path needs no verifier backend container.
+         AspNetCore pulls in Core, Core.Mdoc, OpenId4Vp and Trust. -->
+    <PackageReference Include="Tessio.Verifier.AspNetCore" Version="0.30.2" />
     <!-- QR code generation -->
-    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
     <!-- DI / Options / Logging (Abstractions) -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.0" />
