@@ -1,4 +1,4 @@
-# Schritt für Schritt: einen deutschen PID auslesen, ohne Backend
+﻿# Schritt für Schritt: einen deutschen PID auslesen, ohne Backend
 
 Diese Anleitung führt von „nichts installiert" bis „die Daten stehen auf dem Bildschirm".
 Jeder Befehl ist zum Kopieren gedacht. Nach jedem Schritt steht, **was du sehen musst** — wenn
@@ -18,6 +18,7 @@ Rechne mit 30–45 Minuten, wenn du die Zertifikate schon hast.
 2. [.NET installieren](#2-net-installieren)
 3. [Das Projekt holen](#3-das-projekt-holen)
 4. [Die zwei Zertifikate besorgen](#4-die-zwei-zertifikate-besorgen)
+   - [4b. Nur PEM-Dateien? Die `.p12` selbst bauen](#4b-du-hast-nur-pem-dateien-dann-baust-du-die-p12-selbst)
 5. [Den Keystore prüfen — der Schritt, der einen Testlauf spart](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart)
 6. [Trust Anchors — schon fertig](#6-trust-anchors--schon-fertig)
 7. [Von außen erreichbar werden](#7-von-außen-erreichbar-werden)
@@ -39,14 +40,16 @@ Rechne mit 30–45 Minuten, wenn du die Zertifikate schon hast.
 | ☐ | .NET SDK 8 oder neuer | [Schritt 2](#2-net-installieren) |
 | ☐ | `openssl` und `curl` | bei macOS/Linux dabei; bei Windows in Git Bash enthalten |
 | ☐ | Ein Smartphone mit der **deutschen EUDI-Wallet** und einem **Test-PID** darin | SPRIND-Sandbox |
-| ☐ | Das **Zugriffszertifikat** als `.p12` **und sein Passwort** | [Schritt 4](#4-die-zwei-zertifikate-besorgen) |
+| ☐ | Das **Zugriffszertifikat** als `.p12` (plus Passwort, falls eines gesetzt ist) — oder Zertifikat und Schlüssel als PEM, dann [Schritt 4b](#4b-du-hast-nur-pem-dateien-dann-baust-du-die-p12-selbst) | [Schritt 4](#4-die-zwei-zertifikate-besorgen) |
 | ☐ | Das **Registrierungszertifikat** (ein langer Text in einer Zeile) | [Schritt 4](#4-die-zwei-zertifikate-besorgen) |
 | ☐ | Die **Trust Anchors** des Ausstellers | liegen schon bei, siehe [Schritt 6](#6-trust-anchors--schon-fertig) |
 
-> **Zum Passwort:** Es wird gebraucht. Die `.p12`-Datei enthält den privaten Schlüssel, mit dem die
-> Anfrage signiert wird, und das Passwort schützt ihn in der Datei. Ohne Passwort kommt die
-> Anwendung nicht an den Schlüssel, ohne Schlüssel gibt es keine Signatur, und ohne Signatur öffnet
-> die Wallet die Anfrage nicht einmal.
+> **Zum Passwort:** Was du zwingend brauchst, ist der **private Schlüssel** — er signiert die
+> Anfrage, und ohne Signatur öffnet die Wallet sie nicht einmal. Ein Passwort brauchst du nur
+> dann, wenn die `.p12` eines hat: es verschlüsselt den Schlüssel *innerhalb* der Datei. Eine
+> `.p12` ohne Passwort ist erlaubt und funktioniert hier — siehe
+> [Schritt 4b](#4b-du-hast-nur-pem-dateien-dann-baust-du-die-p12-selbst). Was nicht geht, ist eine
+> Datei ohne Schlüssel.
 
 ---
 
@@ -122,6 +125,76 @@ Speichere es in eine Datei, **eine Zeile, kein Umbruch, keine Leerzeichen**:
 > **Warum so pedantisch:** Die Wallet prüft eine Signatur über **genau diese Zeichen**. Ein
 > zusätzlicher Zeilenumbruch, ein Leerzeichen am Ende oder ein „aufgeräumtes" Format macht die
 > Signatur ungültig, und die Wallet bricht ab, bevor sie dich überhaupt fragt.
+
+### 4b. Du hast nur PEM-Dateien? Dann baust du die `.p12` selbst
+
+Das ist der häufigere Fall: du bekommst **Zertifikat** und **privaten Schlüssel** als zwei
+PEM-Dateien (`.pem`, `.crt`, `.key`) und keine `.p12`. Kein Problem — eine `.p12` ist nur ein
+Behälter, und openssl packt ihn in einem Befehl.
+
+**Was du dafür brauchst, sind drei Teile:**
+
+| Teil | Typische Datei | Hast du den? |
+|---|---|---|
+| dein privater Schlüssel | `access.key`, `privkey.pem` | ja, sagst du |
+| dein Zertifikat | `access.crt`, `cert.pem` | ja, sagst du |
+| das Zertifikat der **ausstellenden CA** | `ca.crt`, `chain.pem` | **das fehlt oft** — siehe unten |
+
+**Fehlt die CA, frag dein eigenes Zertifikat, wo sie liegt.** Jedes ordentlich ausgestellte
+Zertifikat nennt seinen Ausstellerpfad in der Erweiterung `authorityInfoAccess`:
+
+```bash
+openssl x509 -in access.crt -noout -text | grep -A2 "Authority Information Access"
+```
+
+Das gibt eine Zeile `CA Issuers - URI:http://…` aus. Die lädst du herunter (`-L` ist wichtig,
+solche Server leiten gern um) und wandelst sie nach PEM, falls sie als DER kommt:
+
+```bash
+curl -sSL -o ca.der "http://…die-adresse-aus-der-zeile…"
+openssl x509 -inform DER -in ca.der -out ca.crt      # falls DER
+# schon PEM? dann einfach als ca.crt verwenden
+```
+
+Prüfe, dass es die richtige ist — der `subject` der CA muss dem `issuer` deines Zertifikats
+entsprechen:
+
+```bash
+openssl x509 -in access.crt -noout -issuer
+openssl x509 -in ca.crt     -noout -subject
+```
+
+**Dann der eine Befehl, der alles zusammenpackt:**
+
+```bash
+openssl pkcs12 -export \
+  -inkey access.key \
+  -in access.crt \
+  -certfile ca.crt \
+  -passout pass: \
+  -out keystore.p12
+```
+
+`-certfile ca.crt` ist der Teil, auf den es ankommt — ohne ihn landet nur dein eigenes Zertifikat
+in der Datei, und du läufst in genau den Fehler aus [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart).
+Liegt die Kette als eine Datei mit mehreren Zertifikaten vor (`chain.pem`), gib einfach die an.
+
+**`-passout pass:` bedeutet: kein Passwort.** Das ist erlaubt und funktioniert. Setze dann in
+[Schritt 8](#8-konfigurieren) die Variable `GermanPid__AccessCertificatePassword` **gar nicht**
+(oder auf einen leeren Wert). Der Verifier startet trotzdem.
+
+Wenn du lieber eines setzt, nimm `-passout pass:deinPasswort` und trage es in Schritt 8 ein. Für
+einen Testlauf auf deinem eigenen Rechner bringt es nichts: der private Schlüssel liegt vorher
+schon unverschlüsselt in `access.key`, ein Passwort auf der `.p12` schützt also nichts, was nicht
+daneben offen liegt. Für den Transport auf einen Server ist es sinnvoll — dann aber die
+unverschlüsselte PEM-Datei danach löschen.
+
+> **Ist dein `access.key` selbst mit einer Passphrase geschützt?** Dann fragt openssl beim Export
+> danach. Das ist nicht dasselbe wie das `.p12`-Passwort: das eine schützt die PEM-Datei, das
+> andere den fertigen Behälter.
+
+Zum Abschluss prüfen, ob Schlüssel und Zertifikat zueinander passen und zwei Zertifikate drin sind
+— beides steht in [Schritt 5](#5-den-keystore-prüfen--der-schritt-der-einen-testlauf-spart).
 
 ---
 
