@@ -4,7 +4,11 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── 1. Build stage: SDK for restore + publish ────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+# SDK 10, not 8, although the application targets net8.0: miEUDIverifier.Core targets
+# net8.0 AND net10.0, and an SDK cannot restore a target framework newer than itself
+# (NETSDK1045). The runtime stage below stays on 8.0, because the application's own output is
+# net8.0 and a project reference picks the library's matching net8.0 asset.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy only the project files first → the NuGet restore gets cached as a layer
