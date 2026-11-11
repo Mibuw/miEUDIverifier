@@ -99,6 +99,16 @@ public sealed class RegistrationCertificateRequestBuilder : IPresentationRequest
             AllowSelfSignedSigningCertificate = allowSelfSignedAccessCertificate,
             RequestUriBase = requestUriBase,
             DefaultRequestLifetime = lifetime,
+
+            // AuthorizationEndpoint is left at the library's "openid4vp://authorize", which yields
+            // openid4vp://authorize/?client_id=... The reference implementation hands the German
+            // wallet openid4vp://?client_id=... instead, with no host. The scheme is what decides
+            // which app opens a deep link, so both reach the wallet, and the query it parses is
+            // identical. Setting this to "openid4vp://" does NOT reproduce the other form: the
+            // builder puts it through System.Uri, which normalises the empty authority to
+            // openid4vp:///?... -- three slashes, a shape neither implementation sends. If the
+            // wallet ever refuses to open the link, that is the knob, but it needs a raw string
+            // rather than a Uri to be useful.
         });
 
         ClientId = ClientIdentifier.X509Hash(leaf);

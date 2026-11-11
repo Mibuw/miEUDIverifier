@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Security.Cryptography.X509Certificates;
 using GermanPidTessioVerifier;
 using Tessio.Verifier.AspNetCore;
@@ -70,6 +71,21 @@ builder.Services.AddSingleton(sp => new MdocVerifier(
     new MdocVerifierOptions { CheckStatus = true },
     TimeProvider.System));
 
+// Behind a reverse proxy or a tunnel the application sees a plain HTTP connection, and the host
+// builds response_uri from what it sees. Without this the wallet is told to post the presentation
+// to an http:// address, which it refuses -- and should.
+//
+// The proxy is not named here because a tunnel's address is not fixed. That is only safe because
+// the container publishes on 127.0.0.1 and nothing but the proxy can reach it; a verifier exposed
+// directly must name its proxies instead, or a caller can forge these headers.
+builder.Services.Configure<ForwardedHeadersOptions>(forwarded =>
+{
+    forwarded.ForwardedHeaders =
+        ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedFor;
+    forwarded.KnownNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+});
+
 builder.Services.AddTessioVerifier(options =>
 {
     options.Mode = VerifierMode.Live;
@@ -101,6 +117,9 @@ builder.Services.AddTessioVerifier(options =>
 });
 
 var app = builder.Build();
+
+// Before anything that reads the request's scheme or host.
+app.UseForwardedHeaders();
 
 app.MapTessioVerifier();
 

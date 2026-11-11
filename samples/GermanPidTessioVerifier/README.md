@@ -83,19 +83,26 @@ reaching the wallet.
    ecosystem. Without them every presentation verifies cryptographically and is still refused as
    untrusted, so the sample refuses to start on an empty folder rather than fail later.
 
-   `./fetch-trust-anchors.sh ./trust-anchors` downloads both and checks the chain. You do not
-   have to take the URLs on trust: each certificate names the next one up in its own
+   `./fetch-trust-anchors.sh ./trust-anchors` downloads all three and checks both chains. You do
+   not have to take the URLs on trust: each certificate names the next one up in its own
    `authorityInfoAccess` extension, so they came out of a real presentation —
 
    ```
-   Deutschland PID-Signer Test CA 1-26-1 2026     valid to 2031-05-19   the issuing CA
-   Deutschland PID-Provider Root Test CA 1 2026   valid to 2032-05-19   self-signed, the anchor
+   Deutschland PID-Provider Root Test CA 1 2026            to 2032-05-19  self-signed, the anchor
+   Deutschland PID-Signer Test CA 1-26-1 2026              to 2031-05-19  signs the PID
+   Deutschland PID-Status-List-Signer Test CA 1-26-2 2026  to 2031-05-19  signs the status list
    ```
 
-   Both are needed: the root is the anchor, and the intermediate builds the path, because the
-   wallet's response carries only the signer's own certificate in its `x5chain`. Verified against
-   a real captured presentation, which then resolves as
-   `trusted=True via=x5c anchor=CN=Deutschland PID-Provider Root Test CA 1 2026`.
+   All three are needed. The root is the anchor and the intermediates build the paths, because
+   the wallet's response carries only the signer's own certificate in its `x5chain`. **The status
+   list branch is a separate intermediate under the same root, and leaving it out fails late and
+   misleadingly:** everything about the presentation verifies and the single remaining error is
+   `status_invalid`, which reads like a revoked credential rather than a missing certificate
+   path. That cost one live scan here before it was found.
+
+   Verified against a real captured presentation, which resolves as
+   `trusted=True via=x5c anchor=CN=Deutschland PID-Provider Root Test CA 1 2026`, with the
+   revocation check against the issuer's live status list passing.
 
    These are **test** anchors. A production verifier uses the production hierarchy, and should
    take it from the published trust list rather than from `authorityInfoAccess`.
