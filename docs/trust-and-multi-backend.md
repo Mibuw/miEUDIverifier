@@ -145,6 +145,35 @@ AUEYGStoAiEA7JYFAOxqjqFfNlyAjmJDWM20+2u5LTkiNLgVcry9kQg=
 > daily — so it may already satisfy the mechanism. It is still hosted on the sandbox that loses
 > support, and public information does not say whether such certificates are covered.
 >
+> #### A hub certificate has read a real PID (2026-11-12)
+>
+> Verified end to end with an access certificate from the new hub
+> (`Common Codes GmbH`, `OU=EUDI Hub`, `CN=Common Codes EUDI Hub Sandbox Access Certificates CA 01`):
+> `credential valid … key via x5c`. The migration is therefore not a leap of faith. Three findings
+> from that run:
+>
+> - **A single certificate in `x5c` was accepted.** The hub's intermediate CA cannot be fetched —
+>   its AIA, `https://eudi-hub.gov.de/trust/sandbox-access-certificates.pem`, returns the portal's
+>   error page with **HTTP 200**, and `/trust` is an empty shell. So the request carried the leaf
+>   alone and the wallet took it, because it ships the hub's trust list. Read that as an observation
+>   about this wallet build, not as licence to ship leaf-only: HAIP 1.0 §5 still asks for the path,
+>   and a `200` serving HTML is worth reporting to `partner@d-you.help` — a 404 would at least be
+>   detectable.
+> - **The issuer side is untouched.** The D-Trust anchors still resolve the credential; the hub
+>   governs the relying party's certificate, not the PID issuer's.
+> - **Check every registration certificate the portal issues**, by decoding its `credentials`
+>   array, before deploying it. Two different faults appeared in one afternoon: the first granted
+>   `familiy_name` (a typo, so a request for `family_name` is dropped with no consent screen), and
+>   its replacement fixed the spelling but set the mdoc entry to `format: "dc+sd-jwt"` with
+>   `meta.vct_values`, where it must be `format: "mso_mdoc"` with `meta.doctype_value`. Both look
+>   like certificate faults from the outside.
+>
+> The certificate also differs from the old one in ways that did not matter here but might
+> elsewhere: no Extended Key Usage (the old one carried `1.0.18013.5.1.6`), a Key Usage of
+> `Non Repudiation` alone, and a Subject Alternative Name pointing at the organisation's
+> information page rather than the verifier's address — harmless under the `x509_hash` client
+> identifier, which is a hash rather than a name, but a blocker under `x509_san_dns`.
+>
 > **The registrar's PKI has changed, and those last two rows describe the old one.** Verified
 > 2026-11-12. The certificate reissued on 2026-11-04 comes from a two-level hierarchy and names
 > different endpoints; old and new are served side by side:
