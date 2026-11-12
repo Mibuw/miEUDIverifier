@@ -119,6 +119,32 @@ AUEYGStoAiEA7JYFAOxqjqFfNlyAjmJDWM20+2u5LTkiNLgVcry9kQg=
 | AIA CA-Issuers | `https://sandbox.eudi-wallet.org/api/ca.der` |
 | CRL | `https://sandbox.eudi-wallet.org/api/status-management/crl` |
 
+> ### ⚠️ The interim sandbox loses support on 19 November 2026
+>
+> From <https://eudi-hub.gov.de/de/start/sandbox-migration> (read 2026-11-12): support for
+> `https://sandbox.eudi-wallet.org/` **ends on 2026-11-19**, and it is not a URL change. The EUDI
+> Wallet app will begin **enforcing revocation lists** for access *and* registration certificates,
+> and certificates issued by the interim sandbox "do not support this mechanism", so they stop
+> working in current and future app versions. Everything in this section describes certificates
+> from that sandbox.
+>
+> The replacement is the **EUDI Hub**, <https://portal.eudi-hub.gov.de/>, in beta and open for
+> registration: create an account, register the organisation, configure which credentials you issue
+> or request, then mint certificates from that configuration — configuration and issuance are now
+> separate steps. ELSTER verification follows in early 2027; until then an organisation name carries
+> an `unverified` prefix. Migration contact: `partner@d-you.help`.
+>
+> **No new technical endpoints are published publicly.** The BMI developer guide still documents the
+> old sandbox and does not mention the hub or revocation enforcement; `api.eudi-hub.gov.de` and
+> `account.eudi-hub.gov.de` — the two backends the portal's own CSP names — expose no OIDC discovery
+> or OpenAPI document. So the new PKI's endpoints can only be read off a certificate the hub issues,
+> which is what the reissue checklist below now does.
+>
+> One thing worth asking rather than assuming: the certificate reissued on 2026-11-04 already has a
+> CRL distribution point and the two-level hierarchy described below, and that CRL is refreshed
+> daily — so it may already satisfy the mechanism. It is still hosted on the sandbox that loses
+> support, and public information does not say whether such certificates are covered.
+>
 > **The registrar's PKI has changed, and those last two rows describe the old one.** Verified
 > 2026-11-12. The certificate reissued on 2026-11-04 comes from a two-level hierarchy and names
 > different endpoints; old and new are served side by side:
