@@ -119,6 +119,39 @@ AUEYGStoAiEA7JYFAOxqjqFfNlyAjmJDWM20+2u5LTkiNLgVcry9kQg=
 | AIA CA-Issuers | `https://sandbox.eudi-wallet.org/api/ca.der` |
 | CRL | `https://sandbox.eudi-wallet.org/api/status-management/crl` |
 
+> **The registrar's PKI has changed, and those last two rows describe the old one.** Verified
+> 2026-11-12. The certificate reissued on 2026-11-04 comes from a two-level hierarchy and names
+> different endpoints; old and new are served side by side:
+>
+> ```
+> German Registrar Root CA                     self-signed, to 2036-10-12   /api/pki/root.der
+> └── German Registrar Access Certificate CA 1 to 2029-10-14                /api/pki/ac/1.der
+>     └── C=DE, O=POS, CN=POS                  to 2027-11-04                (ours)
+> ```
+>
+> | | old certificate (2026-07-28) | current certificate (2026-11-04) |
+> |---|---|---|
+> | Issuer | `C=DE, CN=German Registrar` | `C=DE, O=German Registrar, CN=German Registrar Access Certificate CA 1` |
+> | AIA CA-Issuers | `…/api/ca.der` | `…/api/pki/ac/1.der` |
+> | CRL | `…/api/status-management/crl` | `…/api/pki/ac/1.crl` |
+> | Root | the issuer itself, flat | `…/api/pki/root.der` |
+>
+> All five URLs answered 200 on 2026-11-12 and both CRLs had been regenerated that morning, so the
+> old pair is still served for certificates issued before the change rather than abandoned.
+>
+> Two consequences. **Read the AIA and CRL off a reissued certificate rather than assuming them** —
+> they are signed extensions, so a new hierarchy only reaches you with a new certificate, and a
+> wallet follows what the certificate says, not what a document says. And this hierarchy is why the
+> request object carries **two** certificates in `x5c`: the leaf and Access Certificate CA 1, with
+> the root left out, which is what HAIP 1.0 section 5 asks for.
+>
+> Separately, a portal at `portal.eudi-hub.gov.de` ("Organisationsverwaltungsportal — manage your
+> organization in the EUDI Hub") has appeared alongside `sandbox.eudi-wallet.org`. It is a Next.js
+> application whose own CSP header names exactly two backends, `account.eudi-hub.gov.de` and
+> `api.eudi-hub.gov.de`; neither exposes OIDC discovery or an OpenAPI document publicly, and the old
+> sandbox does not redirect to it. Whether certificates issued through it carry yet other endpoints
+> can only be read off such a certificate.
+
 Checks worth running after any reissue:
 
 ```bash
@@ -126,13 +159,22 @@ Checks worth running after any reissue:
 openssl x509 -in access.crt -noout -subject -issuer -dates \
         -ext authorityInfoAccess,crlDistributionPoints,subjectAltName,extendedKeyUsage
 
-# Chain against the CA the AIA URL actually serves
-curl -s https://sandbox.eudi-wallet.org/api/ca.der | openssl x509 -inform der -out ca.pem
-openssl verify -CAfile ca.pem -partial_chain access.crt
+# Chain against what the certificate's OWN AIA serves, followed up to the root. Taking the URLs
+# from the certificate instead of from here is the point: they changed once already.
+aia=$(openssl x509 -in access.crt -noout -ext authorityInfoAccess | grep -oE 'https?://[^ ]+')
+curl -s "$aia" | openssl x509 -inform der -out issuer.pem
+root=$(openssl x509 -in issuer.pem -noout -ext authorityInfoAccess | grep -oE 'https?://[^ ]+')
+if [ -n "$root" ]; then                       # two-level hierarchy (since 2026-11)
+  curl -s "$root" | openssl x509 -inform der -out root.pem
+  openssl verify -CAfile root.pem -untrusted issuer.pem access.crt
+else                                          # flat hierarchy (before that)
+  openssl verify -CAfile issuer.pem access.crt
+fi
 
-# Not revoked?
-curl -s https://sandbox.eudi-wallet.org/api/status-management/crl \
-  | openssl crl -inform der -noout -text | grep "$(openssl x509 -in access.crt -noout -serial | cut -d= -f2)"
+# Not revoked? Again from the certificate's own distribution point.
+crl=$(openssl x509 -in access.crt -noout -ext crlDistributionPoints | grep -oE 'https?://[^ ]+')
+curl -s "$crl" | openssl crl -inform der -noout -text \
+  | grep "$(openssl x509 -in access.crt -noout -serial | cut -d= -f2)" || echo "not revoked"
 
 # The client_id for VERIFIER_ORIGINALCLIENTID (x509_hash prefix)
 openssl x509 -in access.crt -outform DER | openssl dgst -sha256 -binary \

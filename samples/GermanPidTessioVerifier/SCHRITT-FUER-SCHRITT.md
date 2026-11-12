@@ -219,6 +219,16 @@ Schritte.
 
 Beide kommen aus der **SPRIND-Sandbox**: <https://sandbox.eudi-wallet.org/>
 
+> Seit kurzem gibt es daneben ein Portal unter <https://portal.eudi-hub.gov.de/> („Organisations­
+> verwaltungsportal"). Was dort ausgestellt wird, ist von außen nicht erkennbar — die Sandbox ist
+> der Weg, über den es hier funktioniert hat, und sie leitet nicht auf das Portal um. Egal woher dein
+> Zertifikat kommt: **lies die Endpunkte aus dem Zertifikat selbst** statt sie anzunehmen, denn sie
+> haben sich bei dieser Sandbox schon einmal geändert.
+>
+> ```bash
+> openssl x509 -in access.crt -noout -ext authorityInfoAccess,crlDistributionPoints
+> ```
+
 Dort registrierst du dich als Relying Party (Prüfstelle) und bekommst:
 
 **(1) Das Zugriffszertifikat** — es beweist der Wallet, *wer* fragt.
