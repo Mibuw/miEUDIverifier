@@ -36,6 +36,11 @@ builder.Services.AddInProcessVerifier(new InProcessVerifierOptions
 
     // Only ever true for a local smoke test. A real wallet refuses a self-signed signer.
     AllowSelfSignedAccessCertificate = settings.GetValue("AllowSelfSignedAccessCertificate", false),
+
+    // Left unset for the seven PID attributes. Worth being able to narrow from configuration,
+    // because the list must stay inside what the registration certificate grants -- and a
+    // certificate that grants six, or spells one differently, is a real thing that happens.
+    RequestedClaims = settings.GetSection("RequestedClaims").Get<string[]>(),
 });
 
 // Behind a proxy or a tunnel the application sees a plain HTTP connection, and the response URI is
