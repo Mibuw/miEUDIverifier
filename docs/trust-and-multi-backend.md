@@ -165,8 +165,18 @@ AUEYGStoAiEA7JYFAOxqjqFfNlyAjmJDWM20+2u5LTkiNLgVcry9kQg=
 >   array, before deploying it. Two different faults appeared in one afternoon: the first granted
 >   `familiy_name` (a typo, so a request for `family_name` is dropped with no consent screen), and
 >   its replacement fixed the spelling but set the mdoc entry to `format: "dc+sd-jwt"` with
->   `meta.vct_values`, where it must be `format: "mso_mdoc"` with `meta.doctype_value`. Both look
->   like certificate faults from the outside.
+>   `meta.vct_values`, where it should be `format: "mso_mdoc"` with `meta.doctype_value`.
+>
+>   Of those two, **only the spelling actually stopped a presentation.** The mislabelled format did
+>   not: on 2026-11-12 an `mso_mdoc` request for all seven attributes succeeded against that
+>   certificate, so this wallet build matches the claim paths and the type value and does not
+>   enforce the `format` field. That was tested because the opposite was expected, and the
+>   expectation was wrong — worth recording, because the reasoning that produced it looked sound.
+>
+>   Do not build on it. A certificate whose format is wrong is still wrong, the leniency is one
+>   wallet build's behaviour rather than a documented rule, and the claim-name check is strict, so
+>   there is no reason to think this one stays loose. Have the portal fix it; just do not spend a
+>   day hunting it when something else is broken.
 >
 > The certificate also differs from the old one in ways that did not matter here but might
 > elsewhere: no Extended Key Usage (the old one carried `1.0.18013.5.1.6`), a Key Usage of
