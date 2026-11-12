@@ -123,6 +123,7 @@ public static class TessioVerifierExtensions
             ResponseMode = options.ResponseMode,
             SessionLifetime = options.SessionLifetime,
             CheckRevocation = options.CheckRevocation,
+            ReturnPageHtml = options.ReturnPageHtml,
         });
 
         services.AddSingleton<TessioVerifierEngine>();
@@ -151,13 +152,43 @@ public static class TessioVerifierExtensions
         // session whose request object it files in its own internal store, while this host's request
         // URIs point at the endpoint below. Unmapping a route the library maps is not possible, so
         // it is shadowed here, ahead of routing, and sent to the application's own page.
+        // The page the WALLET sends the phone to after a presentation. The library hosts one of its
+        // own there, which carries its name and shows the disclosed attributes -- and the holder sees
+        // it on their phone, so for a deployment under its own brand it is the wrong page. Shadowed
+        // the same way as the start page, ahead of routing, when the host supplies its own.
+        //
+        // What this gives up: the hosted page also redeems the same-device response code. A
+        // cross-device flow holds nothing to redeem, which is why it is safe here; a host doing
+        // same-device verification should keep the hosted page or redeem the code itself.
+        var returnPage = options.ReturnPageHtml;
+
         app.Use(async (context, next) =>
         {
-            if (HttpMethods.IsGet(context.Request.Method)
-                && context.Request.Path.Equals($"{prefix}/start", StringComparison.OrdinalIgnoreCase))
+            if (HttpMethods.IsGet(context.Request.Method))
             {
-                context.Response.Redirect("/");
-                return;
+                var path = context.Request.Path;
+
+                if (path.Equals($"{prefix}/start", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.Redirect("/");
+                    return;
+                }
+
+                // {prefix}/{sessionId}/return -- the session id is whatever the store minted, so the
+                // shape is matched rather than the value.
+                if (returnPage is { Length: > 0 }
+                    && path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase, out var rest)
+                    && rest.HasValue
+                    && rest.Value!.EndsWith("/return", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.ContentType = "text/html; charset=utf-8";
+                    // The wallet put a one-time response code in the URI fragment. A fragment never
+                    // reaches a server, so there is nothing to strip here -- but nothing should be
+                    // cached either, because the next holder gets the same URL shape.
+                    context.Response.Headers.CacheControl = "no-store";
+                    await context.Response.WriteAsync(returnPage, context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
             }
 
             await next(context).ConfigureAwait(false);

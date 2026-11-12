@@ -40,6 +40,23 @@ var inProcessBackend = settings.InProcessBackend is { Length: > 0 } ip ? ip : nu
 if (inProcessBackend is not null)
 {
     backendUrls.Remove(inProcessBackend);
+    // Die Seite, die das Handy des Inhabers nach der Datenübergabe sieht. Ohne das zeigt die
+    // Bibliothek dort ihre eigene Demo-Seite mit ihrem Namen und den offengelegten Attributen —
+    // brauchbar zum Entwickeln, falsch für eine Instanz, die unter eigenem Namen läuft.
+    //
+    // Die Überschrift kommt aus der Konfiguration, nicht aus dem Code: sie nennt den Betreiber,
+    // und der steht nicht in einem öffentlichen Repository.
+    if (string.IsNullOrWhiteSpace(settings.InProcess.ReturnPageHtml))
+    {
+        var heading = builder.Configuration[
+            $"{VerifierSettings.SectionName}:InProcess:ReturnPageHeading"];
+
+        if (!string.IsNullOrWhiteSpace(heading))
+        {
+            settings.InProcess.ReturnPageHtml = ReturnPage(heading);
+        }
+    }
+
     builder.Services.AddInProcessVerifier(settings.InProcess);
 
     // Behind a reverse proxy or a tunnel the application sees a plain HTTP connection, and the
@@ -520,3 +537,54 @@ try { Process.Start(new ProcessStartInfo(browserUrl) { UseShellExecute = true })
 catch { Console.WriteLine($"  Bitte {browserUrl} manuell im Browser oeffnen."); }
 
 await app.RunAsync();
+
+// Die Seite, die das Handy nach der Datenübergabe anzeigt. Bewusst ohne Logik: sie bestätigt nur,
+// dass die Übergabe durch ist. Das Ergebnis selbst steht auf dem Bildschirm, an dem der QR-Code
+// gescannt wurde, und gehört nicht ein zweites Mal auf ein Gerät, das der Verifier nicht kontrolliert.
+//
+// Alles inline, weil die Wallet diese Seite in einem frischen Browser öffnet: kein Stylesheet,
+// kein Skript, keine externe Schriftart, die erst geladen werden müsste.
+static string ReturnPage(string heading)
+{
+    // Aus der Konfiguration, also vom Betreiber -- trotzdem maskiert. Eine Überschrift darf das
+    // Markup drumherum nicht verlassen, auch wenn sie "nur" aus einer Umgebungsvariable kommt.
+    //
+    // Nur die fünf Zeichen, die in einem Textknoten und im title etwas bedeuten. WebUtility
+    // .HtmlEncode wäre bequemer, kodiert aber auch Umlaute zu &#220; -- im Browser richtig, in der
+    // Quelle unleserlich, und bei einer UTF-8-Seite ohne Nutzen.
+    var safe = heading
+        .Replace("&", "&amp;", StringComparison.Ordinal)
+        .Replace("<", "&lt;", StringComparison.Ordinal)
+        .Replace(">", "&gt;", StringComparison.Ordinal)
+        .Replace("\"", "&quot;", StringComparison.Ordinal)
+        .Replace("'", "&#39;", StringComparison.Ordinal);
+
+    return $$"""
+        <!doctype html>
+        <html lang="de"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>{{safe}}</title>
+        <style>
+          :root { color-scheme: light dark; --fg:#111; --bg:#fff; --muted:#666; --ok:#15803d; }
+          @media (prefers-color-scheme: dark) {
+            :root { --fg:#eee; --bg:#161616; --muted:#aaa; --ok:#4ade80; }
+          }
+          html,body { height:100%; margin:0; }
+          body { font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
+                 color:var(--fg); background:var(--bg);
+                 display:flex; align-items:center; justify-content:center; padding:24px 16px; }
+          main { max-width:22rem; text-align:center; }
+          .mark { width:64px; height:64px; margin:0 auto 20px; display:block; }
+          h1 { font-size:19px; line-height:1.35; margin:0 0 10px; }
+          p { color:var(--muted); margin:0; font-size:14px; }
+        </style></head>
+        <body><main>
+          <svg class="mark" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Erfolgreich">
+            <circle cx="12" cy="12" r="10"></circle><path d="M8 12.5l2.5 2.5L16 9.5"></path>
+          </svg>
+          <h1>{{safe}}</h1>
+          <p>Du kannst dieses Fenster schließen.</p>
+        </main></body></html>
+        """;
+}

@@ -50,6 +50,13 @@ public sealed class TessioEngineOptions
     /// </summary>
     public bool CheckRevocation { get; init; }
 
+    /// <summary>
+    /// The host's own page for the holder's phone after a presentation, or null for the underlying
+    /// library's. Carried here because the hosting code serves it, while the caller configures it on
+    /// <see cref="InProcessVerifierOptions.ReturnPageHtml"/>.
+    /// </summary>
+    public string? ReturnPageHtml { get; init; }
+
     /// <summary>How often the engine looks at the session while waiting for the wallet.</summary>
     /// <remarks>
     /// Reading an in-memory session costs nothing, so this is short. It is not a network poll: the

@@ -130,6 +130,30 @@ public sealed class InProcessVerifierOptions
     public bool AllowSelfSignedAccessCertificate { get; set; }
 
     /// <summary>
+    /// The page the holder's phone lands on after the wallet has handed over the data, as a
+    /// complete HTML document. Null keeps the underlying library's own page.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Worth setting for anything running under its own name. After a presentation the wallet opens
+    /// the verifier's return page on the phone, and the library's default carries the library's
+    /// name and lists the disclosed attributes — which is a reasonable demo page and the wrong page
+    /// for a deployment whose users expect to see the deployment.
+    /// </para>
+    /// <para>
+    /// The value is written to the response as given, so it must be the deployment's own markup and
+    /// not anything built from user input. It is served for any
+    /// <c>{RoutePrefix}/{session}/return</c> request.
+    /// </para>
+    /// <para>
+    /// What this gives up: the library's page also redeems the same-device response code. A
+    /// cross-device flow — a QR code on a screen, scanned by a phone — holds nothing to redeem, so
+    /// nothing is lost there. A deployment doing same-device verification should leave this unset.
+    /// </para>
+    /// </remarks>
+    public string? ReturnPageHtml { get; set; }
+
+    /// <summary>
     /// Throws when something required is missing, naming the setting. Called at startup so a
     /// misconfiguration stops the process instead of the first wallet to scan a code.
     /// </summary>
